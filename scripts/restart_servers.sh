@@ -144,12 +144,10 @@ MCPO_PID=$!
 echo "  MCPO wrapper starting (PID: $MCPO_PID)"
 echo "  Log: $GOFRNP_LOGS/gofrnp_mcpo.log"
 
-# Wait for MCPO to be ready by calling ping endpoint
+# Wait for MCPO to be ready by calling openapi endpoint
 echo "  Waiting for MCPO to be ready..."
 for i in {1..30}; do
-    if curl -s -X POST http://localhost:$MCPO_PORT/ping \
-        -H "Content-Type: application/json" \
-        -d '{}' 2>&1 | grep -q '"status":"success"'; then
+    if curl -s http://localhost:$MCPO_PORT/openapi.json | grep -q "openapi"; then
         echo "  ✓ MCPO wrapper ready"
         break
     fi
