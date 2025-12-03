@@ -18,6 +18,14 @@ python -m app.main_mcpo --mcp-port 8020 --mcpo-port 8021
 python -m app.main_web --port 8022
 ```
 
+## Capabilities
+
+The server exposes several mathematical and financial capabilities via MCP tools. Detailed documentation for each module is available below:
+
+- **[Curve Fitting](docs/curvefit.md)**: Robust regression analysis, automatic model selection, and outlier detection.
+- **[Element-wise Math](docs/elementwise.md)**: High-performance array computations with broadcasting (NumPy/TensorFlow).
+- **[Financial Math](docs/financial.md)**: Tools for Time Value of Money (TVM), Option Pricing (Binomial), Bond Pricing, and Technical Analysis.
+
 ## Project Structure
 
 ```
