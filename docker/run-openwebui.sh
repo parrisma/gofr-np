@@ -42,11 +42,11 @@ else
 fi
 
 # Create docker network if it doesn't exist
-if ! docker network inspect ai-net >/dev/null 2>&1; then
-    echo "Creating ai-net network..."
-    docker network create ai-net
+if ! docker network inspect gofr-net >/dev/null 2>&1; then
+    echo "Creating gofr-net network..."
+    docker network create gofr-net
 else
-    echo "Network ai-net already exists"
+    echo "Network gofr-net already exists"
 fi
 
 # Handle openwebui_volume creation/recreation
@@ -84,7 +84,7 @@ echo "Port: $WEBUI_PORT"
 # Build docker run command with optional OpenRouter API key
 DOCKER_CMD="docker run -d \
     --name openwebui \
-    --network ai-net \
+    --network gofr-net \
     -p 0.0.0.0:$WEBUI_PORT:8080 \
     -e TZ=\"$TIMEZONE\" \
     -e WEBUI_AUTH=false"
@@ -133,7 +133,7 @@ if docker ps -q -f name=openwebui | grep -q .; then
     echo "From WSL2 Host (Windows):"
     echo "  👉 http://\$(ip addr show eth0 | grep 'inet ' | awk '{print \$2}' | cut -d/ -f1):$WEBUI_PORT"
     echo ""
-    echo "From Containers on ai-net:"
+    echo "From Containers on gofr-net:"
     echo "  http://openwebui:8080"
     echo ""
     echo "-------------------------------------------------------------------"

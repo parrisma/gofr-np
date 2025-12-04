@@ -10,12 +10,12 @@ MCP_PORT=${2:-8020}
 MCPO_PORT=${3:-8021}
 
 # Create docker network if it doesn't exist
-echo "Checking for ai-net network..."
-if ! docker network inspect ai-net >/dev/null 2>&1; then
-    echo "Creating ai-net network..."
-    docker network create ai-net
+echo "Checking for gofr-net network..."
+if ! docker network inspect gofr-net >/dev/null 2>&1; then
+    echo "Creating gofr-net network..."
+    docker network create gofr-net
 else
-    echo "Network ai-net already exists"
+    echo "Network gofr-net already exists"
 fi
 
 # Create docker volume for persistent data if it doesn't exist
@@ -44,7 +44,7 @@ echo "Web port: $WEB_PORT, MCP port: $MCP_PORT, MCPO port: $MCPO_PORT"
 
 docker run -d \
 --name gofrnp_dev \
---network ai-net \
+--network gofr-net \
 --user $(id -u):$(id -g) \
 -v "$HOME/devroot/gofr-np":/home/gofr-np/devroot/gofr-np \
 -v "$HOME/.ssh:/home/gofr-np/.ssh:ro" \
@@ -75,7 +75,7 @@ if docker ps -q -f name=gofrnp_dev | grep -q .; then
     echo "  MCP Server:    http://localhost:$MCP_PORT/mcp"
     echo "  MCPO Proxy:    http://localhost:$MCPO_PORT"
     echo ""
-    echo "Access from ai-net (other containers):"
+    echo "Access from gofr-net (other containers):"
     echo "  Web Server:    http://gofrnp_dev:8022"
     echo "  MCP Server:    http://gofrnp_dev:8020/mcp"
     echo "  MCPO Proxy:    http://gofrnp_dev:8021"
