@@ -1,5 +1,6 @@
 import pytest
 from app.math_engine.capabilities.financial import FinancialCapability
+from app.exceptions import InvalidInputError
 
 class TestFinancialEdgeCases:
     """Test suite for edge cases and error handling in FinancialCapability."""
@@ -11,14 +12,14 @@ class TestFinancialEdgeCases:
     def test_convert_rate_edge_cases(self, capability):
         """Test edge cases for rate conversion."""
         # Rate <= -100% for discrete compounding
-        with pytest.raises(ValueError, match="Rate must be greater than -1.0"):
+        with pytest.raises(InvalidInputError, match="Rate must be greater than -1.0"):
             capability.handle_convert_rate({
                 "rate": -1.0,
                 "from_freq": "annual",
                 "to_freq": "monthly"
             })
 
-        with pytest.raises(ValueError, match="Rate must be greater than -1.0"):
+        with pytest.raises(InvalidInputError, match="Rate must be greater than -1.0"):
             capability.handle_convert_rate({
                 "rate": -1.5,
                 "from_freq": "annual",
@@ -41,19 +42,19 @@ class TestFinancialEdgeCases:
         }
 
         # Negative Spot Price
-        with pytest.raises(ValueError, match="Spot price .* must be non-negative"):
+        with pytest.raises(InvalidInputError, match="Spot price .* must be non-negative"):
             params = base_params.copy()
             params["S"] = -10
             capability.handle_option_price(params)
 
         # Negative Strike Price
-        with pytest.raises(ValueError, match="Strike price .* must be non-negative"):
+        with pytest.raises(InvalidInputError, match="Strike price .* must be non-negative"):
             params = base_params.copy()
             params["K"] = -10
             capability.handle_option_price(params)
 
         # Negative Volatility
-        with pytest.raises(ValueError, match="Volatility .* must be non-negative"):
+        with pytest.raises(InvalidInputError, match="Volatility .* must be non-negative"):
             params = base_params.copy()
             params["sigma"] = -0.2
             capability.handle_option_price(params)
@@ -84,18 +85,18 @@ class TestFinancialEdgeCases:
         }
 
         # Negative Face Value
-        with pytest.raises(ValueError, match="Face value must be non-negative"):
+        with pytest.raises(InvalidInputError, match="Face value must be non-negative"):
             params = base_params.copy()
             params["face_value"] = -100
             capability.handle_bond_price(params)
 
         # Yield <= -100%
-        with pytest.raises(ValueError, match="Yield to maturity must be greater than -1.0"):
+        with pytest.raises(InvalidInputError, match="Yield to maturity must be greater than -1.0"):
             params = base_params.copy()
             params["yield_to_maturity"] = -1.0
             capability.handle_bond_price(params)
             
-        with pytest.raises(ValueError, match="Yield to maturity must be greater than -1.0"):
+        with pytest.raises(InvalidInputError, match="Yield to maturity must be greater than -1.0"):
             params = base_params.copy()
             params["yield_to_maturity"] = -1.5
             capability.handle_bond_price(params)
@@ -106,14 +107,14 @@ class TestFinancialEdgeCases:
         
         # Zero or Negative Window
         for indicator in ["sma", "ema", "rsi", "bollinger"]:
-            with pytest.raises(ValueError, match="Window must be positive"):
+            with pytest.raises(InvalidInputError, match="Window must be positive"):
                 capability.handle_technical_indicators({
                     "indicator": indicator,
                     "prices": prices,
                     "params": {"window": 0}
                 })
                 
-            with pytest.raises(ValueError, match="Window must be positive"):
+            with pytest.raises(InvalidInputError, match="Window must be positive"):
                 capability.handle_technical_indicators({
                     "indicator": indicator,
                     "prices": prices,
@@ -123,14 +124,14 @@ class TestFinancialEdgeCases:
     def test_pv_edge_cases(self, capability):
         """Test edge cases for Present Value."""
         # Mismatched lengths
-        with pytest.raises(ValueError, match="Length of 'times' .* must match 'cash_flows'"):
+        with pytest.raises(InvalidInputError, match="Length of 'times' .* must match 'cash_flows'"):
             capability.handle_pv({
                 "cash_flows": [100, 100],
                 "rate": 0.05,
                 "times": [1] # Only 1 time for 2 flows
             })
 
-        with pytest.raises(ValueError, match="Length of 'rate' yield curve .* must match 'cash_flows'"):
+        with pytest.raises(InvalidInputError, match="Length of 'rate' yield curve .* must match 'cash_flows'"):
             capability.handle_pv({
                 "cash_flows": [100, 100],
                 "rate": [0.05], # Only 1 rate for 2 flows

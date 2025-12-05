@@ -2,13 +2,15 @@
 
 import pytest
 from app.math_engine.capabilities.financial import FinancialCapability
+from app.exceptions import InvalidInputError
 
-@pytest.fixture
-def fin_cap():
-    return FinancialCapability()
 
 class TestFinancialPV:
     
+    @pytest.fixture
+    def fin_cap(self):
+        return FinancialCapability()
+
     def test_simple_pv_discrete(self, fin_cap):
         """Test simple PV with constant rate."""
         # PV = 100 / 1.05 + 100 / 1.05^2
@@ -74,13 +76,13 @@ class TestFinancialPV:
     def test_errors(self, fin_cap):
         """Test error handling."""
         # Missing rate
-        with pytest.raises(ValueError, match="required"):
+        with pytest.raises(InvalidInputError, match="required"):
             fin_cap.handle("financial_pv", {
                 "cash_flows": [100]
             })
             
         # Mismatched times
-        with pytest.raises(ValueError, match="Length of 'times'"):
+        with pytest.raises(InvalidInputError, match="Length of 'times'"):
             fin_cap.handle("financial_pv", {
                 "cash_flows": [100, 200],
                 "rate": 0.05,
@@ -88,7 +90,7 @@ class TestFinancialPV:
             })
             
         # Mismatched yield curve
-        with pytest.raises(ValueError, match="Length of 'rate'"):
+        with pytest.raises(InvalidInputError, match="Length of 'rate'"):
             fin_cap.handle("financial_pv", {
                 "cash_flows": [100, 200],
                 "rate": [0.05], # Only one rate for two flows

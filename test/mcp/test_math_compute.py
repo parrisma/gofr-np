@@ -271,10 +271,12 @@ class TestMathComputeErrors:
                     "operation": "unknown_op",
                     "a": [1, 2, 3],
                 })
-                data = parse_json(result)
 
-                assert "error" in data
-                assert "unknown_op" in data["error"].lower()
+                assert result.isError
+                text = extract_text(result)
+                assert "unknown_op" in text
+                # The error message comes from schema validation, so it might vary slightly
+                # but it should mention the invalid value.
 
     @pytest.mark.asyncio
     async def test_missing_operand_b(self, mcp_url):

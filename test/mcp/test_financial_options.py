@@ -2,12 +2,14 @@
 
 import pytest
 from app.math_engine.capabilities.financial import FinancialCapability
+from app.exceptions import InvalidInputError
 
-@pytest.fixture
-def fin_cap():
-    return FinancialCapability()
 
 class TestFinancialOptionPricing:
+
+    @pytest.fixture
+    def fin_cap(self):
+        return FinancialCapability()
     
     def test_european_call_at_the_money(self, fin_cap):
         """Test European Call ATM. S=100, K=100, T=1, r=0.05, sigma=0.2"""
@@ -83,7 +85,7 @@ class TestFinancialOptionPricing:
         assert data["theta"] < 0  # Time decay hurts long option
 
     def test_invalid_inputs(self, fin_cap):
-        with pytest.raises(ValueError):
+        with pytest.raises(InvalidInputError):
             fin_cap.handle("financial_option_price", {
                 "S": 100, "K": 100, "T": 1, "r": 0.05, "sigma": 0.2,
                 "option_type": "call", "exercise_style": "european",

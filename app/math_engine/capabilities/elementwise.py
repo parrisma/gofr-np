@@ -18,7 +18,9 @@ import tensorflow as tf  # noqa: E402 - must be after env var is set
 tf.get_logger().setLevel("ERROR")
 
 from app.logger import session_logger as logger  # noqa: E402 - must be after tf config
+from app.logger.decorators import log_execution_time  # noqa: E402
 from app.math_engine.base import MathCapability, MathResult, ToolDefinition  # noqa: E402
+from app.exceptions import InvalidInputError  # noqa: E402
 
 
 # Type aliases
@@ -58,132 +60,94 @@ class ElementwiseCapability(MathCapability):
     def description(self) -> str:
         return "Element-wise mathematical operations with automatic broadcasting"
 
-    def __init__(self):
-        """Initialize the elementwise capability."""
-        logger.info("ElementwiseCapability initialized")
-
     def get_tools(self) -> List[ToolDefinition]:
-        """Return tool definitions for elementwise operations."""
+        """Return list of tool definitions."""
         return [
             ToolDefinition(
                 name="math_compute",
-                description=(
-                    "Perform fast, GPU-accelerated mathematical computations on numbers and arrays. "
-                    "Use this tool whenever you need to calculate mathematical results accurately instead of estimating. "
-                    "Supports element-wise operations with automatic broadcasting (smaller arrays expand to match larger ones). "
-                    "\n\n"
-                    "WHEN TO USE:\n"
-                    "- Calculating exact numerical results (don't estimate, use this tool)\n"
-                    "- Processing lists/arrays of numbers in bulk\n"
-                    "- Trigonometry, logarithms, exponentials, statistical comparisons\n"
-                    "- Any math where precision matters\n"
-                    "\n"
-                    "OPERATIONS AVAILABLE:\n"
-                    "• Arithmetic: add, subtract, multiply, divide, power, mod\n"
-                    "• Exponential/Log: exp, log (natural), log10, log2, sqrt, square\n"
-                    "• Trigonometric: sin, cos, tan, sinh, cosh, tanh\n"
-                    "• Rounding: floor, ceil, round\n"
-                    "• Other: abs, negate, reciprocal, sign, sigmoid, relu, maximum, minimum\n"
-                    "• Comparison (returns 0/1): greater, less, equal, not_equal, greater_equal, less_equal\n"
-                    "\n"
-                    "EXAMPLES:\n"
-                    '• sqrt([4,9,16]) → [2,3,4]\n'
-                    '• add([1,2,3], 10) → [11,12,13] (scalar broadcasts)\n'
-                    '• multiply([[1,2],[3,4]], [10,20]) → [[10,40],[30,80]] (row broadcasts)\n'
-                    '• power([2,3,4], 2) → [4,9,16]\n'
-                    '• sin([0, 3.14159/2]) → [0, 1]\n'
-                    "\n"
-                    "RETURNS: {result: <computed values>, shape: [dimensions], dtype: 'float64'}"
-                ),
+                description="Perform element-wise mathematical operations (add, sub, mul, div, exp, log, etc.) on scalars or arrays with broadcasting.",
                 input_schema={
                     "type": "object",
                     "properties": {
                         "operation": {
                             "type": "string",
-                            "description": (
-                                "The mathematical operation to perform. "
-                                "UNARY (use only 'a'): abs, ceil, cos, cosh, exp, floor, log, log10, log2, "
-                                "negate, reciprocal, relu, round, sigmoid, sign, sin, sinh, sqrt, square, tan, tanh. "
-                                "BINARY (use both 'a' and 'b'): add, subtract, multiply, divide, power, mod, "
-                                "maximum, minimum, greater, less, equal, not_equal, greater_equal, less_equal."
-                            ),
+                            "description": "The mathematical operation to perform.",
+                            "enum": sorted(ALL_OPS),
                         },
                         "a": {
-                            "description": (
-                                "First operand. Can be: a single number (e.g., 5), "
-                                "a 1D array (e.g., [1,2,3]), "
-                                "or a multi-dimensional array (e.g., [[1,2],[3,4]]). "
-                                "This is the primary input for all operations."
-                            ),
-                            "oneOf": [
+                            "description": "First operand (scalar or array).",
+                            "anyOf": [
                                 {"type": "number"},
-                                {"type": "array"},
+                                {"type": "array", "items": {"type": "number"}},
+                                {"type": "array", "items": {"type": "array"}},  # Nested arrays
                             ],
                         },
                         "b": {
-                            "description": (
-                                "Second operand for binary operations (add, subtract, multiply, divide, power, etc.). "
-                                "Supports broadcasting: a scalar applies to all elements, "
-                                "a smaller array broadcasts across larger dimensions. "
-                                "NOT needed for unary operations (sqrt, exp, sin, etc.)."
-                            ),
-                            "oneOf": [
+                            "description": "Second operand for binary operations.",
+                            "anyOf": [
                                 {"type": "number"},
-                                {"type": "array"},
+                                {"type": "array", "items": {"type": "number"}},
+                                {"type": "array", "items": {"type": "array"}},
                             ],
                         },
                         "precision": {
                             "type": "string",
+                            "description": "Computation precision.",
                             "enum": ["float32", "float64"],
-                            "description": "Numeric precision. Use float64 (default) for accuracy, float32 for speed with large arrays.",
+                            "default": "float64",
                         },
                     },
                     "required": ["operation", "a"],
                 },
-                handler_name="compute",
+                handler_name="handle",
             ),
             ToolDefinition(
                 name="math_list_operations",
-                description=(
-                    "List all mathematical operations supported by math_compute, organized by category (unary vs binary). "
-                    "Call this if you need to see the complete list of available operations."
-                ),
-                input_schema={"type": "object", "properties": {}},
-                handler_name="list_operations_tool",
+                description="List all supported mathematical operations.",
+                input_schema={
+                    "type": "object",
+                    "properties": {},
+                },
+                handler_name="handle",
             ),
         ]
 
+    def __init__(self):
+        """Initialize the elementwise capability."""
+        logger.info("ElementwiseCapability initialized")
+
+    @log_execution_time
     def handle(self, tool_name: str, arguments: Dict[str, Any]) -> MathResult:
         """Route tool invocation to appropriate handler."""
         if tool_name == "math_compute":
-            a_value = arguments.get("a")
-            if a_value is None:
-                raise ValueError("Parameter 'a' is required for math_compute")
-            return self.compute(
-                operation=arguments.get("operation", ""),
-                a=a_value,
-                b=arguments.get("b"),
-                precision=arguments.get("precision", "float64"),
-            )
+            operation = arguments.get("operation")
+            a = arguments.get("a")
+            b = arguments.get("b")
+            precision = arguments.get("precision", "float64")
+
+            if not operation:
+                raise InvalidInputError("Missing required argument: operation")
+            if a is None:
+                raise InvalidInputError("Missing required argument: a")
+
+            return self.compute(operation, a, b, precision)
         elif tool_name == "math_list_operations":
-            # Return operations list as a special MathResult
             ops = self.list_operations()
             return MathResult(
-                result=ops,  # type: ignore
+                result=ops,
                 shape=[],
-                dtype="object",
+                dtype="object"
             )
         else:
-            raise ValueError(f"Unknown tool: {tool_name}")
+            raise InvalidInputError(f"Unknown tool: {tool_name}")
 
-    def _to_tensor(
-        self,
-        data: ArrayLike,
-        precision: Precision = "float64"
-    ) -> tf.Tensor:
-        """Convert input data to a tensor with specified precision."""
+    def _to_tensor(self, data: ArrayLike, precision: Precision) -> tf.Tensor:
+        """Convert input to TensorFlow tensor with specified precision."""
         dtype = tf.float64 if precision == "float64" else tf.float32
-        return tf.cast(tf.constant(data), dtype)  # type: ignore[return-value]
+        try:
+            return tf.convert_to_tensor(data, dtype=dtype)
+        except (ValueError, TypeError) as e:
+            raise InvalidInputError(f"Failed to convert input to tensor: {str(e)}")
 
     def _to_result(self, tensor: tf.Tensor) -> MathResult:
         """Convert tensor to MathResult."""
@@ -225,12 +189,12 @@ class ElementwiseCapability(MathCapability):
             MathResult with the computed result, shape, and dtype
 
         Raises:
-            ValueError: If operation is unknown or arguments are invalid
+            InvalidInputError: If operation is unknown or arguments are invalid
         """
         operation = operation.lower()
 
         if operation not in ALL_OPS:
-            raise ValueError(
+            raise InvalidInputError(
                 f"Unknown operation: '{operation}'. "
                 f"Supported: {sorted(ALL_OPS)}"
             )
@@ -245,14 +209,14 @@ class ElementwiseCapability(MathCapability):
         # Handle binary operations
         elif operation in BINARY_OPS:
             if b is None:
-                raise ValueError(
+                raise InvalidInputError(
                     f"Operation '{operation}' requires two operands (b is missing)"
                 )
             tensor_b = self._to_tensor(b, precision)
             result = self._binary_op(operation, tensor_a, tensor_b)
 
         else:
-            raise ValueError(f"Operation '{operation}' not implemented")
+            raise InvalidInputError(f"Operation '{operation}' not implemented")
 
         logger.debug(
             "Math compute completed",
@@ -291,7 +255,7 @@ class ElementwiseCapability(MathCapability):
 
         op_func = ops_map.get(operation)
         if op_func is None:
-            raise ValueError(f"Unary operation '{operation}' not found")
+            raise InvalidInputError(f"Unary operation '{operation}' not found")
 
         return op_func(a)
 
@@ -319,7 +283,7 @@ class ElementwiseCapability(MathCapability):
 
         op_func = ops_map.get(operation)
         if op_func is None:
-            raise ValueError(f"Binary operation '{operation}' not found")
+            raise InvalidInputError(f"Binary operation '{operation}' not found")
 
         # Handle logical operations (need boolean tensors)
         if operation.startswith("logical_"):

@@ -2,26 +2,31 @@
 
 # Usage: ./run-openwebui.sh [-r] [-p PORT]
 # Options:
-#   -r         Recreate openwebui_volume (drop and recreate if it exists)
-#   -p PORT    Port to expose Open WebUI on (default: 8080)
-# Example: ./run-openwebui.sh -p 8090 -r
+#   -r           Recreate openwebui_volume (drop and recreate if it exists)
+#   -p PORT      Port to expose Open WebUI on (default: 9090)
+#
+# Environment Variables:
+#   OPENROUTER_API_KEY    - API key for OpenRouter integration
+#
+# Example: ./run-openwebui.sh -r -p 9090
 
 RECREATE_VOLUME=false
 WEBUI_PORT=9090
+
 while getopts "rp:" opt; do
     case $opt in
         r)
             RECREATE_VOLUME=true
-            ;;
+        ;;
         p)
             WEBUI_PORT=$OPTARG
-            ;;
+        ;;
         \?)
             echo "Usage: $0 [-r] [-p PORT]"
-            echo "  -r         Recreate openwebui_volume (drop and recreate if it exists)"
-            echo "  -p PORT    Port to expose Open WebUI on (default: 9090)"
+            echo "  -r           Recreate openwebui_volume (drop and recreate if it exists)"
+            echo "  -p PORT      Port to expose Open WebUI on (default: 9090)"
             exit 1
-            ;;
+        ;;
     esac
 done
 
@@ -71,6 +76,13 @@ else
     fi
 fi
 
+# Check if custom openwebui image exists
+if ! docker image inspect openwebui:latest >/dev/null 2>&1; then
+    echo "ERROR: openwebui:latest image not found."
+    echo "Build it first with: ./docker/build-openwebui.sh"
+    exit 1
+fi
+
 # Stop and remove existing container if it exists
 echo "Stopping existing openwebui container..."
 docker stop openwebui 2>/dev/null || true
@@ -81,13 +93,12 @@ docker rm openwebui 2>/dev/null || true
 echo "Starting openwebui container..."
 echo "Port: $WEBUI_PORT"
 
-# Build docker run command with optional OpenRouter API key
+# Build docker run command
 DOCKER_CMD="docker run -d \
-    --name openwebui \
-    --network gofr-net \
-    -p 0.0.0.0:$WEBUI_PORT:8080 \
-    -e TZ=\"$TIMEZONE\" \
-    -e WEBUI_AUTH=false"
+--name openwebui \
+--network gofr-net \
+-p 0.0.0.0:$WEBUI_PORT:8080 \
+-e TZ=\"$TIMEZONE\""
 
 # Add OpenRouter configuration if API key is provided
 if [ -n "$OPENROUTER_API_KEY" ]; then
@@ -100,13 +111,13 @@ fi
 
 # Enable direct connections to OpenAI-compatible endpoints
 DOCKER_CMD="$DOCKER_CMD \
-    -e ENABLE_API_KEY_AUTH=true"
+-e ENABLE_API_KEY_AUTH=true"
 
 DOCKER_CMD="$DOCKER_CMD \
-    -v openwebui_volume:/data \
-    -v \"${WEBUI_SHARE_DIR}\":/data/openwebui_share \
-    --restart unless-stopped \
-    ghcr.io/open-webui/open-webui:main"
+-v openwebui_volume:/data \
+-v \"${WEBUI_SHARE_DIR}\":/data/openwebui_share \
+--restart unless-stopped \
+openwebui:latest"
 
 # Execute the docker run command
 eval $DOCKER_CMD
@@ -137,20 +148,6 @@ if docker ps -q -f name=openwebui | grep -q .; then
     echo "  http://openwebui:8080"
     echo ""
     echo "-------------------------------------------------------------------"
-    echo "🔌 MCPO INTEGRATION (for Open WebUI settings):"
-    echo ""
-    echo "In Open WebUI Settings → Tools → Add OpenAPI Server:"
-    echo "  URL:      http://\$(docker ps --filter 'name=.*dev' --format '{{.Names}}' | head -1):8011"
-    echo "  API Key:  changeme"
-    echo ""
-    echo "Or use dev container hostname directly (run 'hostname' in dev container)"
-    echo "  Example:  http://a8a8d018bc69:8011"
-    echo ""
-    echo "-------------------------------------------------------------------"
-    echo "🔧 DIRECT ACCESS (from host machine):"
-    echo "  MCPO Docs:     http://localhost:8011/docs"
-    echo "  MCP Server:    http://localhost:8010/mcp"
-    echo ""
     echo "Data & Storage:"
     echo "  Volume:        openwebui_volume"
     echo "  Shared Dir:    ${WEBUI_SHARE_DIR} -> /data/openwebui_share"

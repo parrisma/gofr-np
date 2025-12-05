@@ -27,22 +27,13 @@ class ErrorResponse:
 
 # Recovery strategy templates for common error types
 RECOVERY_STRATEGIES: Dict[str, str] = {
-    "SESSION_NOT_FOUND": "Verify the session_id is correct and belongs to your group. Call list_active_sessions to see your sessions.",
-    "TEMPLATE_NOT_FOUND": "Use list_templates to see available templates for your group.",
-    "FRAGMENT_NOT_FOUND": "Call list_session_fragments to see current fragment instances and their GUIDs.",
-    "INVALID_FRAGMENT_PARAMETERS": "Call get_fragment_details to see required and optional parameters for this fragment type.",
-    "INVALID_GLOBAL_PARAMETERS": "Call get_template_details to see required global parameters for this template.",
-    "INVALID_POSITION": "Use 'start', 'end', 'before:<guid>', or 'after:<guid>' format. Call list_session_fragments to get valid GUIDs.",
-    "INVALID_SESSION_STATE": "Ensure global parameters are set before adding fragments or rendering.",
-    "INVALID_TABLE_DATA": "Review table validation requirements in documentation. Ensure rows are consistent and required parameters are provided.",
-    "INVALID_COLOR": "Use theme colors (blue, orange, green, red, purple, etc.) or hex format (#RRGGBB or #RGB).",
-    "NUMBER_FORMAT_ERROR": "Use format specifications like 'currency:USD', 'percent', 'decimal:2', 'integer', or 'accounting'.",
-    "INVALID_COLUMN_WIDTH": "Column widths must be percentages (e.g., '25%') and total ≤ 100%.",
-    "STYLE_NOT_FOUND": "Use list_styles to see available styles for your group.",
-    "REGISTRY_ERROR": "Check that template/fragment/style ID is valid and exists in the system.",
+    "REGISTRY_ERROR": "Check that the tool or capability name is valid and exists in the system.",
     "VALIDATION_ERROR": "Review the error message and adjust the request parameters accordingly.",
     "RESOURCE_NOT_FOUND": "Verify the resource ID is correct and the resource exists.",
     "SECURITY_ERROR": "Ensure your authentication token has access to the requested resource.",
+    "INVALID_INPUT": "Check the input parameters. Ensure arrays have correct dimensions and values are within valid ranges.",
+    "COMPUTATION_ERROR": "The computation failed. This might be due to numerical instability, overflow, or invalid mathematical operations.",
+    "MATH_ERROR": "A general math error occurred. Check input values for domain errors (e.g., sqrt of negative number).",
 }
 
 

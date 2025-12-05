@@ -89,3 +89,20 @@ class RegistryError(GofrNpError):
             details: Additional context
         """
         super().__init__(code=code, message=message, details=details)
+
+
+class MathError(GofrNpError):
+    """Base for all math engine errors."""
+    pass
+
+
+class InvalidInputError(MathError):
+    """Raised when input parameters are invalid (wrong type, shape, or value)."""
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+        super().__init__(code="INVALID_INPUT", message=message, details=details)
+
+
+class ComputationError(MathError):
+    """Raised when a computation fails (overflow, singular matrix, etc.)."""
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+        super().__init__(code="COMPUTATION_ERROR", message=message, details=details)

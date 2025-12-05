@@ -11,7 +11,9 @@ from typing import Any, Dict, List, Tuple, cast
 import numpy as np
 
 from app.logger import session_logger as logger
+from app.logger.decorators import log_execution_time
 from app.math_engine.base import MathCapability, MathResult, ToolDefinition
+from app.exceptions import InvalidInputError
 
 
 class FinancialCapability(MathCapability):
@@ -25,289 +27,104 @@ class FinancialCapability(MathCapability):
     def description(self) -> str:
         return "Financial calculations including PV, NPV, and yield curve analysis"
 
-    def __init__(self):
-        """Initialize the financial capability."""
-        logger.info("FinancialCapability initialized")
-
     def get_tools(self) -> List[ToolDefinition]:
-        """Return tool definitions for financial operations."""
+        """Return list of tool definitions."""
         return [
             ToolDefinition(
                 name="financial_pv",
-                description=(
-                    "Calculate the Present Value (PV) of a series of cash flows. "
-                    "Supports both constant discount rates and yield curves (term structures). "
-                    "Can handle discrete or continuous compounding. "
-                    "\n\n"
-                    "WHEN TO USE:\n"
-                    "- 'What is the value of these future payments today?'\n"
-                    "- 'Discount these cash flows at 5%'\n"
-                    "- 'Calculate PV given this yield curve'\n"
-                    "\n"
-                    "LIMITATIONS:\n"
-                    "- Assumes simple years (no day count conventions like 30/360 or Actual/360).\n"
-                    "- Yield curve interpolation is linear if rates are provided as a list.\n"
-                    "\n"
-                    "PARAMETERS:\n"
-                    "- cash_flows: List of payment amounts\n"
-                    "- times: List of time periods (years) for each flow. If omitted, assumes t=1, 2, 3...\n"
-                    "- rate: Annual discount rate (e.g., 0.05 for 5%). Can be a single number or a list matching 'times' (yield curve).\n"
-                    "- compounding: 'discrete' (default) or 'continuous'\n"
-                    "\n"
-                    "RETURNS:\n"
-                    "{\n"
-                    '  "present_value": 1234.56,\n'
-                    '  "discounted_flows": [95.2, 90.7, ...], \n'
-                    '  "total_undiscounted": 1500.0\n'
-                    "}"
-                ),
+                description="Calculate Present Value (PV) of cash flows.",
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "cash_flows": {
-                            "type": "array",
-                            "items": {"type": "number"},
-                            "description": "List of cash flow amounts"
-                        },
-                        "rate": {
-                            "anyOf": [
-                                {"type": "number"},
-                                {"type": "array", "items": {"type": "number"}}
-                            ],
-                            "description": "Discount rate (decimal, e.g. 0.05) or list of rates (yield curve)"
-                        },
-                        "times": {
-                            "type": "array",
-                            "items": {"type": "number"},
-                            "description": "Time in years for each cash flow. Defaults to [1, 2, ... N]"
-                        },
-                        "compounding": {
-                            "type": "string",
-                            "enum": ["discrete", "continuous"],
-                            "default": "discrete",
-                            "description": "Compounding method"
-                        }
+                        "cash_flows": {"type": "array", "items": {"type": "number"}, "description": "List of cash flow amounts"},
+                        "rate": {"description": "Discount rate (scalar) or yield curve (array)", "anyOf": [{"type": "number"}, {"type": "array", "items": {"type": "number"}}]},
+                        "times": {"type": "array", "items": {"type": "number"}, "description": "Time periods for cash flows (optional, defaults to 1..N)"},
+                        "compounding": {"type": "string", "enum": ["discrete", "continuous"], "default": "discrete"}
                     },
                     "required": ["cash_flows", "rate"]
                 },
-                handler_name="handle_pv"
+                handler_name="handle"
             ),
             ToolDefinition(
                 name="financial_convert_rate",
-                description=(
-                    "Convert interest rates between different compounding frequencies. "
-                    "Useful for comparing rates quoted with different terms (e.g., Annual vs Monthly vs Continuous). "
-                    "\n\n"
-                    "LIMITATIONS:\n"
-                    "- Assumes 365 days for 'daily' compounding.\n"
-                    "- Does not handle business day adjustments.\n"
-                    "\n"
-                    "PARAMETERS:\n"
-                    "- rate: The input interest rate (decimal, e.g., 0.05 for 5%)\n"
-                    "- from_freq: Frequency of the input rate ('simple', 'annual', 'semiannual', 'quarterly', 'monthly', 'weekly', 'daily', 'continuous')\n"
-                    "- to_freq: Frequency to convert to (same options as above)\n"
-                    "\n"
-                    "RETURNS:\n"
-                    "{\n"
-                    '  "converted_rate": 0.04879, \n'
-                    '  "effective_annual_rate": 0.05\n'
-                    "}"
-                ),
+                description="Convert interest rates between different compounding frequencies.",
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "rate": {
-                            "type": "number",
-                            "description": "Input interest rate (decimal)"
-                        },
-                        "from_freq": {
-                            "type": "string",
-                            "enum": ["simple", "annual", "semiannual", "quarterly", "monthly", "weekly", "daily", "continuous"],
-                            "description": "Compounding frequency of input rate"
-                        },
-                        "to_freq": {
-                            "type": "string",
-                            "enum": ["simple", "annual", "semiannual", "quarterly", "monthly", "weekly", "daily", "continuous"],
-                            "description": "Compounding frequency to convert to"
-                        }
+                        "rate": {"type": "number", "description": "The interest rate to convert"},
+                        "from_freq": {"type": "string", "description": "Source frequency (annual, semiannual, quarterly, monthly, weekly, daily, continuous)"},
+                        "to_freq": {"type": "string", "description": "Target frequency"}
                     },
                     "required": ["rate", "from_freq", "to_freq"]
                 },
-                handler_name="handle_convert_rate"
+                handler_name="handle"
             ),
             ToolDefinition(
                 name="financial_option_price",
-                description=(
-                    "Calculate the price of an option using the Binomial Option Pricing Model (CRR). "
-                    "Supports both European and American exercise styles, and Call/Put options. "
-                    "This is a path-dependent model (lattice-based) suitable for American options. "
-                    "\n\n"
-                    "LIMITATIONS:\n"
-                    "- Binomial model is an approximation. Accuracy improves with more 'steps' but increases computation time.\n"
-                    "- Discrete dividends are handled via the Escrowed Dividend Model (spot price adjustment), which assumes dividends are known and fixed.\n"
-                    "- Greeks (Delta, Gamma, etc.) are approximated from the tree or finite differences.\n"
-                    "\n"
-                    "PARAMETERS:\n"
-                    "- S: Current spot price of the underlying asset\n"
-                    "- K: Strike price of the option\n"
-                    "- T: Time to maturity in years\n"
-                    "- r: Risk-free interest rate (decimal, e.g., 0.05)\n"
-                    "- q: Continuous dividend yield (decimal, e.g., 0.02). Default 0.\n"
-                    "- dividends: List of discrete dividends [{'amount': 1.0, 'time': 0.5}, ...]. Optional.\n"
-                    "- sigma: Volatility of the underlying asset (decimal, e.g., 0.20)\n"
-                    "- option_type: 'call' or 'put'\n"
-                    "- exercise_style: 'european' or 'american'\n"
-                    "- steps: Number of time steps in the binomial tree (default: 100). Higher is more accurate but slower.\n"
-                    "\n"
-                    "RETURNS:\n"
-                    "{\n"
-                    '  "price": 10.50,\n'
-                    '  "delta": 0.65,  // Approximate delta\n'
-                    '  "gamma": 0.02,  // Approximate gamma\n'
-                    '  "theta": -0.05, // Approximate theta (1 day)\n'
-                    '  "vega": 0.20,   // Approximate vega (1% vol change)\n'
-                    '  "rho": 0.15     // Approximate rho (1% rate change)\n'
-                    "}"
-                ),
+                description="Calculate option price and Greeks using Binomial Tree (CRR) model.",
                 input_schema={
                     "type": "object",
                     "properties": {
                         "S": {"type": "number", "description": "Spot price"},
                         "K": {"type": "number", "description": "Strike price"},
                         "T": {"type": "number", "description": "Time to maturity (years)"},
-                        "r": {"type": "number", "description": "Risk-free rate"},
+                        "r": {"type": "number", "description": "Risk-free interest rate"},
+                        "sigma": {"type": "number", "description": "Volatility"},
+                        "option_type": {"type": "string", "enum": ["call", "put"]},
+                        "exercise_style": {"type": "string", "enum": ["european", "american"]},
+                        "steps": {"type": "integer", "default": 100, "description": "Number of steps in binomial tree"},
                         "q": {"type": "number", "default": 0.0, "description": "Dividend yield"},
                         "dividends": {
-                            "type": "array",
+                            "type": "array", 
                             "items": {
                                 "type": "object",
-                                "properties": {
-                                    "amount": {"type": "number"},
-                                    "time": {"type": "number"}
-                                },
+                                "properties": {"amount": {"type": "number"}, "time": {"type": "number"}},
                                 "required": ["amount", "time"]
                             },
                             "description": "Discrete dividends"
-                        },
-                        "sigma": {"type": "number", "description": "Volatility"},
-                        "option_type": {
-                            "type": "string",
-                            "enum": ["call", "put"],
-                            "description": "Option type"
-                        },
-                        "exercise_style": {
-                            "type": "string",
-                            "enum": ["european", "american"],
-                            "description": "Exercise style"
-                        },
-                        "steps": {
-                            "type": "integer",
-                            "default": 100,
-                            "description": "Number of tree steps"
                         }
                     },
                     "required": ["S", "K", "T", "r", "sigma", "option_type", "exercise_style"]
                 },
-                handler_name="handle_option_price"
+                handler_name="handle"
             ),
             ToolDefinition(
                 name="financial_bond_price",
-                description=(
-                    "Calculate the price and risk metrics of a fixed-rate bond. "
-                    "Computes Price, Macaulay Duration, Modified Duration, and Convexity. "
-                    "\n\n"
-                    "LIMITATIONS:\n"
-                    "- Assumes a fixed coupon rate and single yield to maturity (flat yield curve).\n"
-                    "- Does not handle day count conventions (assumes integer periods).\n"
-                    "- Assumes face value is paid at maturity along with the last coupon.\n"
-                    "\n"
-                    "PARAMETERS:\n"
-                    "- face_value: Par value of the bond (default 100)\n"
-                    "- coupon_rate: Annual coupon rate (decimal, e.g., 0.05)\n"
-                    "- frequency: Coupon frequency per year (1=annual, 2=semi, 4=quarterly)\n"
-                    "- years_to_maturity: Time to maturity in years\n"
-                    "- yield_to_maturity: Annual yield to maturity (decimal, e.g., 0.06)\n"
-                    "\n"
-                    "RETURNS:\n"
-                    "{\n"
-                    '  "price": 95.50,\n'
-                    '  "macaulay_duration": 4.2,\n'
-                    '  "modified_duration": 4.0,\n'
-                    '  "convexity": 20.5\n'
-                    "}"
-                ),
+                description="Calculate bond price, duration, and convexity.",
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "face_value": {"type": "number", "default": 100.0, "description": "Face value"},
+                        "face_value": {"type": "number", "default": 100.0},
                         "coupon_rate": {"type": "number", "description": "Annual coupon rate"},
-                        "frequency": {"type": "integer", "default": 2, "description": "Coupons per year"},
-                        "years_to_maturity": {"type": "number", "description": "Years to maturity"},
-                        "yield_to_maturity": {"type": "number", "description": "Yield to maturity (YTM)"}
+                        "years_to_maturity": {"type": "number"},
+                        "yield_to_maturity": {"type": "number"},
+                        "frequency": {"type": "integer", "default": 2, "description": "Coupons per year"}
                     },
                     "required": ["coupon_rate", "years_to_maturity", "yield_to_maturity"]
                 },
-                handler_name="handle_bond_price"
+                handler_name="handle"
             ),
             ToolDefinition(
                 name="financial_technical_indicators",
-                description=(
-                    "Calculate common technical analysis indicators for equity trading. "
-                    "Supports Moving Averages (SMA, EMA), RSI, MACD, Bollinger Bands, and PE Ratio. "
-                    "Also detects 'Golden Cross' and 'Death Cross' signals. "
-                    "\n\n"
-                    "LIMITATIONS:\n"
-                    "- Requires sufficient historical data length (e.g., >200 points for 200-day SMA).\n"
-                    "- RSI uses Wilder's Smoothing method.\n"
-                    "- MACD uses standard 12/26/9 EMA settings unless overridden.\n"
-                    "- Returns NaN for initial periods where data is insufficient.\n"
-                    "\n"
-                    "INDICATORS:\n"
-                    "- 'sma': Simple Moving Average. Requires 'window'.\n"
-                    "- 'ema': Exponential Moving Average. Requires 'window'.\n"
-                    "- 'rsi': Relative Strength Index. Requires 'window' (default 14).\n"
-                    "- 'macd': Moving Average Convergence Divergence. Requires 'fast' (12), 'slow' (26), 'signal' (9).\n"
-                    "- 'bollinger': Bollinger Bands. Requires 'window' (20), 'num_std' (2).\n"
-                    "- 'pe_ratio': Price-to-Earnings Ratio. Requires 'price' and 'earnings'.\n"
-                    "- 'cross_signal': Detects Golden/Death Cross. Requires 'short_window' (50), 'long_window' (200).\n"
-                    "\n"
-                    "PARAMETERS:\n"
-                    "- indicator: The name of the indicator (see above)\n"
-                    "- prices: List of historical prices (required for most indicators)\n"
-                    "- params: Dictionary of indicator-specific parameters (e.g., {'window': 20})\n"
-                    "\n"
-                    "RETURNS:\n"
-                    "{\n"
-                    '  "values": [100.1, 100.5, ...], // Indicator values\n'
-                    '  "signal": "death_cross",       // For cross_signal\n'
-                    '  "metadata": {...}              // Additional info\n'
-                    "}"
-                ),
+                description="Calculate technical analysis indicators (SMA, EMA, RSI, PE Ratio).",
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "indicator": {
-                            "type": "string",
-                            "enum": ["sma", "ema", "rsi", "macd", "bollinger", "pe_ratio", "cross_signal"],
-                            "description": "Indicator to calculate"
-                        },
-                        "prices": {
-                            "type": "array",
-                            "items": {"type": "number"},
-                            "description": "Historical price series (ordered oldest to newest)"
-                        },
-                        "params": {
-                            "type": "object",
-                            "description": "Parameters for the indicator",
-                            "additionalProperties": True
-                        }
+                        "indicator": {"type": "string", "enum": ["sma", "ema", "rsi", "pe_ratio"]},
+                        "prices": {"type": "array", "items": {"type": "number"}, "description": "Historical price data"},
+                        "params": {"type": "object", "description": "Indicator-specific parameters (e.g., window)"}
                     },
                     "required": ["indicator"]
                 },
-                handler_name="handle_technical_indicators"
+                handler_name="handle"
             )
         ]
 
+    def __init__(self):
+        """Initialize the financial capability."""
+        logger.info("FinancialCapability initialized")
+
+    @log_execution_time
     def handle(self, tool_name: str, arguments: Dict[str, Any]) -> MathResult:
         """Route tool invocation to appropriate handler."""
         if tool_name == "financial_pv":
@@ -321,7 +138,7 @@ class FinancialCapability(MathCapability):
         elif tool_name == "financial_technical_indicators":
             return self.handle_technical_indicators(arguments)
         else:
-            raise ValueError(f"Unknown tool: {tool_name}")
+            raise InvalidInputError(f"Unknown tool: {tool_name}")
 
     def _get_frequency(self, freq_str: str) -> float:
         """Convert frequency string to number of periods per year."""
@@ -343,13 +160,13 @@ class FinancialCapability(MathCapability):
         to_freq_str = arguments.get("to_freq")
 
         if rate is None or from_freq_str is None or to_freq_str is None:
-            raise ValueError("rate, from_freq, and to_freq are required")
+            raise InvalidInputError("rate, from_freq, and to_freq are required")
 
         r = float(rate)
         
         # Validate rate for discrete compounding
         if from_freq_str != "continuous" and r <= -1.0:
-            raise ValueError("Rate must be greater than -1.0 (-100%) for discrete compounding")
+            raise InvalidInputError("Rate must be greater than -1.0 (-100%) for discrete compounding")
 
         # 1. Convert to Effective Annual Rate (EAR)
         if from_freq_str == "continuous":
@@ -357,19 +174,19 @@ class FinancialCapability(MathCapability):
         else:
             n_from = self._get_frequency(from_freq_str)
             if n_from <= 0:
-                raise ValueError(f"Invalid from_freq: {from_freq_str}")
+                raise InvalidInputError(f"Invalid from_freq: {from_freq_str}")
             ear = np.power(1.0 + r / n_from, n_from) - 1.0
 
         # 2. Convert EAR to target rate
         if to_freq_str == "continuous":
             if ear <= -1.0:
                  # Should not happen if input r > -1, but good for safety
-                 raise ValueError("Effective annual rate <= -1.0 cannot be converted to continuous")
+                 raise InvalidInputError("Effective annual rate <= -1.0 cannot be converted to continuous")
             target_rate = np.log(1.0 + ear)
         else:
             n_to = self._get_frequency(to_freq_str)
             if n_to <= 0:
-                raise ValueError(f"Invalid to_freq: {to_freq_str}")
+                raise InvalidInputError(f"Invalid to_freq: {to_freq_str}")
             target_rate = n_to * (np.power(1.0 + ear, 1.0 / n_to) - 1.0)
 
         return MathResult(
@@ -391,7 +208,7 @@ class FinancialCapability(MathCapability):
         compounding = arguments.get("compounding", "discrete")
 
         if cash_flows is None or rate is None:
-            raise ValueError("cash_flows and rate are required")
+            raise InvalidInputError("cash_flows and rate are required")
 
         # Convert to numpy arrays
         cf = np.array(cash_flows, dtype=np.float64)
@@ -404,13 +221,13 @@ class FinancialCapability(MathCapability):
         else:
             t = np.array(times, dtype=np.float64)
             if len(t) != n:
-                raise ValueError(f"Length of 'times' ({len(t)}) must match 'cash_flows' ({n})")
+                raise InvalidInputError(f"Length of 'times' ({len(t)}) must match 'cash_flows' ({n})")
 
         # Handle rate
         if isinstance(rate, list):
             r = np.array(rate, dtype=np.float64)
             if len(r) != n:
-                raise ValueError(f"Length of 'rate' yield curve ({len(r)}) must match 'cash_flows' ({n})")
+                raise InvalidInputError(f"Length of 'rate' yield curve ({len(r)}) must match 'cash_flows' ({n})")
         else:
             # Scalar rate broadcast to all times
             r = float(rate)
@@ -456,7 +273,7 @@ class FinancialCapability(MathCapability):
         
         S_tree = S - pv_divs
         if S_tree <= 0:
-            raise ValueError("Present value of dividends exceeds spot price")
+            raise InvalidInputError("Present value of dividends exceeds spot price")
 
         # 1. Setup Tree Parameters
         dt = T / N
@@ -558,13 +375,13 @@ class FinancialCapability(MathCapability):
         N = int(arguments.get("steps", 100))
 
         if S < 0:
-            raise ValueError("Spot price (S) must be non-negative")
+            raise InvalidInputError("Spot price (S) must be non-negative")
         if K < 0:
-            raise ValueError("Strike price (K) must be non-negative")
+            raise InvalidInputError("Strike price (K) must be non-negative")
         if sigma < 0:
-            raise ValueError("Volatility (sigma) must be non-negative")
+            raise InvalidInputError("Volatility (sigma) must be non-negative")
         if N < 1:
-            raise ValueError("Steps must be at least 1")
+            raise InvalidInputError("Steps must be at least 1")
 
         # 1. Base Calculation (Price + Tree Greeks)
         result_tuple = self._calculate_binomial_price(
@@ -621,13 +438,13 @@ class FinancialCapability(MathCapability):
         ytm = float(arguments["yield_to_maturity"])
 
         if face_value < 0:
-            raise ValueError("Face value must be non-negative")
+            raise InvalidInputError("Face value must be non-negative")
         if frequency <= 0:
-            raise ValueError("Frequency must be positive")
+            raise InvalidInputError("Frequency must be positive")
         if years <= 0:
-            raise ValueError("Years to maturity must be positive")
+            raise InvalidInputError("Years to maturity must be positive")
         if ytm <= -1.0:
-            raise ValueError("Yield to maturity must be greater than -1.0 (-100%)")
+            raise InvalidInputError("Yield to maturity must be greater than -1.0 (-100%)")
 
         # Number of periods
         n_periods = int(years * frequency)
@@ -697,15 +514,15 @@ class FinancialCapability(MathCapability):
                     price = prices_list[-1]
                 
                 if price is None or earnings is None:
-                    raise ValueError("pe_ratio requires 'price' and 'earnings' in params")
+                    raise InvalidInputError("pe_ratio requires 'price' and 'earnings' in params")
             
             if earnings == 0:
-                raise ValueError("Earnings cannot be zero for PE ratio")
+                raise InvalidInputError("Earnings cannot be zero for PE ratio")
             
             return MathResult({"pe_ratio": float(price) / float(earnings)}, [], "object")
 
         if not prices_list:
-            raise ValueError(f"Indicator '{indicator}' requires 'prices' list")
+            raise InvalidInputError(f"Indicator '{indicator}' requires 'prices' list")
 
         prices = np.array(prices_list, dtype=np.float64)
         n = len(prices)
@@ -713,9 +530,9 @@ class FinancialCapability(MathCapability):
         if indicator == "sma":
             window = int(params.get("window", 14))
             if window <= 0:
-                raise ValueError("Window must be positive")
+                raise InvalidInputError("Window must be positive")
             if n < window:
-                raise ValueError(f"Not enough data for SMA (window={window}, data={n})")
+                raise InvalidInputError(f"Not enough data for SMA (window={window}, data={n})")
             
             # Simple Moving Average
             weights = np.ones(window) / window
@@ -734,9 +551,9 @@ class FinancialCapability(MathCapability):
         elif indicator == "ema":
             window = int(params.get("window", 14))
             if window <= 0:
-                raise ValueError("Window must be positive")
+                raise InvalidInputError("Window must be positive")
             if n < window:
-                raise ValueError(f"Not enough data for EMA (window={window}, data={n})")
+                raise InvalidInputError(f"Not enough data for EMA (window={window}, data={n})")
             
             # Exponential Moving Average
             # alpha = 2 / (N + 1)
@@ -761,9 +578,9 @@ class FinancialCapability(MathCapability):
         elif indicator == "rsi":
             window = int(params.get("window", 14))
             if window <= 0:
-                raise ValueError("Window must be positive")
+                raise InvalidInputError("Window must be positive")
             if n < window + 1:
-                raise ValueError(f"Not enough data for RSI (window={window}, data={n})")
+                raise InvalidInputError(f"Not enough data for RSI (window={window}, data={n})")
             
             deltas = np.diff(prices)
             gains = np.maximum(deltas, 0.0)
@@ -834,9 +651,9 @@ class FinancialCapability(MathCapability):
             num_std = float(params.get("num_std", 2.0))
             
             if window <= 0:
-                raise ValueError("Window must be positive")
+                raise InvalidInputError("Window must be positive")
             if n < window:
-                raise ValueError("Not enough data for Bollinger Bands")
+                raise InvalidInputError("Not enough data for Bollinger Bands")
             
             # SMA
             weights = np.ones(window) / window
@@ -872,7 +689,7 @@ class FinancialCapability(MathCapability):
             long_w = int(params.get("long_window", 200))
             
             if n < long_w:
-                raise ValueError("Not enough data for Cross Signal")
+                raise InvalidInputError("Not enough data for Cross Signal")
             
             # Calculate SMAs
             def get_sma(data, w):
@@ -905,4 +722,4 @@ class FinancialCapability(MathCapability):
             }, [], "object")
 
         else:
-            raise ValueError(f"Unknown indicator: {indicator}")
+            raise InvalidInputError(f"Unknown indicator: {indicator}")

@@ -11,6 +11,9 @@ from app.exceptions.base import (
     SecurityError,
     ConfigurationError,
     RegistryError,
+    MathError,
+    InvalidInputError,
+    ComputationError,
 )
 
 __all__ = [
@@ -21,4 +24,7 @@ __all__ = [
     "SecurityError",
     "ConfigurationError",
     "RegistryError",
+    "MathError",
+    "InvalidInputError",
+    "ComputationError",
 ]

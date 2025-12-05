@@ -3,13 +3,15 @@
 import pytest
 import numpy as np
 from app.math_engine.capabilities.curvefit import CurveFitCapability
+from app.exceptions import InvalidInputError
 
-@pytest.fixture
-def curve_fit_cap():
-    return CurveFitCapability()
 
 class TestCurveFit:
     
+    @pytest.fixture
+    def curve_fit_cap(self):
+        return CurveFitCapability()
+
     def test_linear_fit(self, curve_fit_cap):
         """Test simple linear regression."""
         # y = 2x + 1
@@ -148,21 +150,21 @@ class TestCurveFit:
     def test_errors(self, curve_fit_cap):
         """Test error handling."""
         # Mismatched lengths
-        with pytest.raises(ValueError, match="same length"):
+        with pytest.raises(InvalidInputError, match="same length"):
             curve_fit_cap.handle("curve_fit", {
                 "x": [1, 2],
                 "y": [1, 2, 3]
             })
             
         # Too few points
-        with pytest.raises(ValueError, match="At least 3"):
+        with pytest.raises(InvalidInputError, match="At least 3"):
             curve_fit_cap.handle("curve_fit", {
                 "x": [1, 2],
                 "y": [1, 2]
             })
             
         # Invalid model ID
-        with pytest.raises(ValueError, match="not found"):
+        with pytest.raises(InvalidInputError, match="not found"):
             curve_fit_cap.handle("curve_predict", {
                 "model_id": "fake_id",
                 "x": [1]

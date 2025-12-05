@@ -2,12 +2,14 @@
 
 import pytest
 from app.math_engine.capabilities.financial import FinancialCapability
+from app.exceptions import InvalidInputError
 
-@pytest.fixture
-def fin_cap():
-    return FinancialCapability()
 
 class TestFinancialRateConversion:
+
+    @pytest.fixture
+    def fin_cap(self):
+        return FinancialCapability()
     
     def test_annual_to_monthly(self, fin_cap):
         """Test converting Annual (10%) to Monthly."""
@@ -84,7 +86,7 @@ class TestFinancialRateConversion:
 
     def test_errors(self, fin_cap):
         """Test error handling."""
-        with pytest.raises(ValueError, match="required"):
+        with pytest.raises(InvalidInputError, match="required"):
             fin_cap.handle("financial_convert_rate", {
                 "rate": 0.10
             })

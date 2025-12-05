@@ -13,14 +13,16 @@ from dataclasses import dataclass
 # Suppress TensorFlow logging
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 
-import numpy as np
+import numpy as np  # noqa: E402
 import tensorflow as tf  # noqa: E402
 
 # Disable TensorFlow warnings
 tf.get_logger().setLevel("ERROR")
 
 from app.logger import session_logger as logger  # noqa: E402
+from app.logger.decorators import log_execution_time  # noqa: E402
 from app.math_engine.base import MathCapability, MathResult, ToolDefinition  # noqa: E402
+from app.exceptions import InvalidInputError  # noqa: E402
 
 
 @dataclass
@@ -48,8 +50,8 @@ class CurveFitCapability(MathCapability):
 
     def __init__(self):
         """Initialize the curve fitting capability."""
-        self._fitted_models: Dict[str, FitResult] = {}
         logger.info("CurveFitCapability initialized")
+        self._fitted_models: Dict[str, FitResult] = {}
 
     def get_tools(self) -> List[ToolDefinition]:
         """Return tool definitions for curve fitting."""
@@ -139,6 +141,7 @@ class CurveFitCapability(MathCapability):
             )
         ]
 
+    @log_execution_time
     def handle(self, tool_name: str, arguments: Dict[str, Any]) -> MathResult:
         """Route tool invocation to appropriate handler."""
         if tool_name == "curve_fit":
@@ -146,7 +149,7 @@ class CurveFitCapability(MathCapability):
         elif tool_name == "curve_predict":
             return self.handle_predict(arguments)
         else:
-            raise ValueError(f"Unknown tool: {tool_name}")
+            raise InvalidInputError(f"Unknown tool: {tool_name}")
 
     def handle_fit(self, arguments: Dict[str, Any]) -> MathResult:
         """Handle curve_fit tool."""
@@ -156,13 +159,13 @@ class CurveFitCapability(MathCapability):
         degree = arguments.get("degree")
 
         if not x_in or not y_in:
-            raise ValueError("Both 'x' and 'y' arrays are required")
+            raise InvalidInputError("Both 'x' and 'y' arrays are required")
         
         if len(x_in) != len(y_in):
-            raise ValueError(f"Input arrays must have same length. Got x={len(x_in)}, y={len(y_in)}")
+            raise InvalidInputError(f"Input arrays must have same length. Got x={len(x_in)}, y={len(y_in)}")
         
         if len(x_in) < 3:
-            raise ValueError("At least 3 data points are required for curve fitting")
+            raise InvalidInputError("At least 3 data points are required for curve fitting")
 
         # Convert to numpy arrays
         x = np.array(x_in, dtype=np.float64)
@@ -174,7 +177,7 @@ class CurveFitCapability(MathCapability):
             x = x[mask]
             y = y[mask]
             if len(x) < 3:
-                raise ValueError("Too many invalid points (NaN/Inf)")
+                raise InvalidInputError("Too many invalid points (NaN/Inf)")
 
         # 1. Outlier Detection (Robust Z-score on residuals of a simple linear fit)
         # We do a quick linear fit to find obvious outliers
@@ -225,7 +228,7 @@ class CurveFitCapability(MathCapability):
         valid_candidates = [c for c in candidates if c is not None]
         
         if not valid_candidates:
-            raise ValueError("Could not fit any model to the data")
+            raise InvalidInputError("Could not fit any model to the data")
 
         # Select best by AIC (Akaike Information Criterion) to balance fit vs complexity
         # Lower AIC is better
@@ -261,10 +264,10 @@ class CurveFitCapability(MathCapability):
         x_in = arguments.get("x")
 
         if not model_id or x_in is None:
-            raise ValueError("model_id and x are required")
+            raise InvalidInputError("model_id and x are required")
 
         if model_id not in self._fitted_models:
-            raise ValueError(f"Model '{model_id}' not found. It may have expired or never existed.")
+            raise InvalidInputError(f"Model '{model_id}' not found. It may have expired or never existed.")
 
         fit = self._fitted_models[model_id]
         
@@ -272,7 +275,7 @@ class CurveFitCapability(MathCapability):
         try:
             y_pred = fit.predict_fn(x_in)
         except Exception as e:
-            raise ValueError(f"Prediction failed: {str(e)}")
+            raise InvalidInputError(f"Prediction failed: {str(e)}")
 
         return MathResult(
             result=y_pred,

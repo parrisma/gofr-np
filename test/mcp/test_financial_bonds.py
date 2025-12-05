@@ -1,5 +1,7 @@
 import pytest
 from app.math_engine.capabilities.financial import FinancialCapability
+from app.exceptions import InvalidInputError
+
 
 class TestFinancialBondPricing:
     """Test suite for financial_bond_price tool."""
@@ -121,7 +123,7 @@ class TestFinancialBondPricing:
 
     def test_invalid_inputs(self, capability):
         """Test error handling for invalid inputs."""
-        with pytest.raises(ValueError, match="Frequency must be positive"):
+        with pytest.raises(InvalidInputError, match="Frequency must be positive"):
             capability.handle_bond_price({
                 "coupon_rate": 0.05,
                 "years_to_maturity": 10,
@@ -129,7 +131,7 @@ class TestFinancialBondPricing:
                 "frequency": 0
             })
 
-        with pytest.raises(ValueError, match="Years to maturity must be positive"):
+        with pytest.raises(InvalidInputError, match="Years to maturity must be positive"):
             capability.handle_bond_price({
                 "coupon_rate": 0.05,
                 "years_to_maturity": -1,

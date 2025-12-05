@@ -14,3 +14,4 @@ html2text>=2020.1.16
 PyYAML>=6.0
 Babel>=2.13.0
 pypdf>=4.0.0
+hypothesis>=6.0.0

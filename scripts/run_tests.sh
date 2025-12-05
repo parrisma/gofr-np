@@ -6,6 +6,7 @@
 # - Points to test data directories
 # - Starts servers if needed for integration tests
 # - Runs pytest with proper configuration
+# - Supports coverage reporting and multiple test categories
 #
 # Usage:
 #   ./scripts/run_tests.sh                          # Run all tests
@@ -16,6 +17,13 @@
 #   ./scripts/run_tests.sh --no-servers test/unit/  # Run without starting servers
 #   ./scripts/run_tests.sh --stop                   # Stop servers only
 #   ./scripts/run_tests.sh --cleanup-only           # Clean environment only
+#   ./scripts/run_tests.sh --coverage               # Run with coverage reporting
+#   ./scripts/run_tests.sh --coverage-html          # Run with HTML coverage report
+#   ./scripts/run_tests.sh --unit                   # Run unit tests only (no servers)
+#   ./scripts/run_tests.sh --integration            # Run integration tests only (with servers)
+#   ./scripts/run_tests.sh --quick                  # Run quick validation (code quality + unit)
+#   ./scripts/run_tests.sh --boundary               # Run boundary/edge case tests only
+#   ./scripts/run_tests.sh --all                    # Run all test categories
 
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
 
@@ -214,6 +222,13 @@ start_web_server() {
 START_SERVERS=true  # Always start servers by default
 STOP_ONLY=false
 CLEANUP_ONLY=false
+COVERAGE=false
+COVERAGE_HTML=false
+RUN_UNIT=false
+RUN_INTEGRATION=false
+RUN_QUICK=false
+RUN_BOUNDARY=false
+RUN_ALL=false
 PYTEST_ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -232,6 +247,40 @@ while [[ $# -gt 0 ]]; do
             ;;
         --stop|--stop-servers)
             STOP_ONLY=true
+            shift
+            ;;
+        --coverage)
+            COVERAGE=true
+            shift
+            ;;
+        --coverage-html)
+            COVERAGE=true
+            COVERAGE_HTML=true
+            shift
+            ;;
+        --unit)
+            RUN_UNIT=true
+            START_SERVERS=false
+            shift
+            ;;
+        --integration)
+            RUN_INTEGRATION=true
+            START_SERVERS=true
+            shift
+            ;;
+        --quick)
+            RUN_QUICK=true
+            START_SERVERS=false
+            shift
+            ;;
+        --boundary)
+            RUN_BOUNDARY=true
+            START_SERVERS=false
+            shift
+            ;;
+        --all)
+            RUN_ALL=true
+            START_SERVERS=true
             shift
             ;;
         *)
@@ -274,10 +323,86 @@ fi
 # Run pytest
 echo -e "${GREEN}=== Running Tests ===${NC}"
 set +e
-if [ ${#PYTEST_ARGS[@]} -eq 0 ]; then
+
+# Build coverage arguments if needed
+COVERAGE_ARGS=""
+if [ "$COVERAGE" = true ]; then
+    COVERAGE_ARGS="--cov=app --cov-report=term-missing"
+    if [ "$COVERAGE_HTML" = true ]; then
+        COVERAGE_ARGS="$COVERAGE_ARGS --cov-report=html:coverage_html"
+    fi
+    echo -e "${BLUE}Coverage reporting enabled${NC}"
+fi
+
+# Determine which tests to run
+if [ "$RUN_QUICK" = true ]; then
+    echo -e "${BLUE}Running QUICK validation (code quality + unit tests)...${NC}"
+    
+    # Code quality first
+    echo -e "${BLUE}Step 1/2: Code quality tests...${NC}"
+    uv run python -m pytest test/code_quality/ -v $COVERAGE_ARGS
+    CODE_QUALITY_EXIT=$?
+    
+    if [ $CODE_QUALITY_EXIT -ne 0 ]; then
+        echo -e "${RED}Code quality tests failed${NC}"
+        TEST_EXIT_CODE=$CODE_QUALITY_EXIT
+    else
+        # Unit tests (direct capability tests without servers)
+        echo ""
+        echo -e "${BLUE}Step 2/2: Unit tests...${NC}"
+        uv run python -m pytest test/mcp/test_curve_fit.py test/mcp/test_financial.py test/mcp/test_financial_edge_cases.py -v $COVERAGE_ARGS
+        TEST_EXIT_CODE=$?
+    fi
+
+elif [ "$RUN_UNIT" = true ]; then
+    echo -e "${BLUE}Running UNIT tests only (no servers)...${NC}"
+    uv run python -m pytest test/mcp/test_curve_fit.py test/mcp/test_financial.py test/mcp/test_financial_*.py -v $COVERAGE_ARGS
+    TEST_EXIT_CODE=$?
+
+elif [ "$RUN_BOUNDARY" = true ]; then
+    echo -e "${BLUE}Running BOUNDARY/edge case tests only (no servers)...${NC}"
+    uv run python -m pytest test/mcp/test_boundary_cases.py -v $COVERAGE_ARGS
+    TEST_EXIT_CODE=$?
+
+elif [ "$RUN_INTEGRATION" = true ]; then
+    echo -e "${BLUE}Running INTEGRATION tests (requires servers)...${NC}"
+    uv run python -m pytest test/mcp/test_math_compute.py -v $COVERAGE_ARGS
+    TEST_EXIT_CODE=$?
+
+elif [ "$RUN_ALL" = true ]; then
+    echo -e "${BLUE}Running ALL tests...${NC}"
+    
+    # Code quality first
+    echo -e "${BLUE}Step 1/3: Code quality tests...${NC}"
+    uv run python -m pytest test/code_quality/ -v
+    CODE_QUALITY_EXIT=$?
+    
+    if [ $CODE_QUALITY_EXIT -ne 0 ]; then
+        echo -e "${RED}Code quality tests failed - continuing with other tests${NC}"
+        TEST_EXIT_CODE=$CODE_QUALITY_EXIT
+    else
+        # Unit tests
+        echo ""
+        echo -e "${BLUE}Step 2/3: Unit tests...${NC}"
+        uv run python -m pytest test/mcp/test_curve_fit.py test/mcp/test_financial.py test/mcp/test_financial_*.py -v $COVERAGE_ARGS
+        UNIT_EXIT=$?
+        
+        if [ $UNIT_EXIT -ne 0 ]; then
+            echo -e "${RED}Unit tests failed${NC}"
+            TEST_EXIT_CODE=$UNIT_EXIT
+        else
+            # Integration tests
+            echo ""
+            echo -e "${BLUE}Step 3/3: Integration tests...${NC}"
+            uv run python -m pytest test/mcp/test_math_compute.py -v $COVERAGE_ARGS
+            TEST_EXIT_CODE=$?
+        fi
+    fi
+
+elif [ ${#PYTEST_ARGS[@]} -eq 0 ]; then
     # Default: run code quality tests first (no servers needed), then all other tests
     echo -e "${BLUE}Running code quality tests...${NC}"
-    uv run python -m pytest test/code_quality/ -v
+    uv run python -m pytest test/code_quality/ -v $COVERAGE_ARGS
     CODE_QUALITY_EXIT=$?
     
     if [ $CODE_QUALITY_EXIT -ne 0 ]; then
@@ -286,12 +411,12 @@ if [ ${#PYTEST_ARGS[@]} -eq 0 ]; then
     else
         echo ""
         echo -e "${BLUE}Running MCP integration tests...${NC}"
-        uv run python -m pytest test/mcp/ -v
+        uv run python -m pytest test/mcp/ -v $COVERAGE_ARGS
         TEST_EXIT_CODE=$?
     fi
 else
     # Run with custom arguments
-    uv run python -m pytest "${PYTEST_ARGS[@]}"
+    uv run python -m pytest "${PYTEST_ARGS[@]}" $COVERAGE_ARGS
     TEST_EXIT_CODE=$?
 fi
 set -e
@@ -320,6 +445,12 @@ echo "Token store emptied"
 echo ""
 if [ $TEST_EXIT_CODE -eq 0 ]; then
     echo -e "${GREEN}=== Tests Passed ===${NC}"
+    if [ "$COVERAGE" = true ]; then
+        echo -e "${BLUE}Coverage report generated${NC}"
+        if [ "$COVERAGE_HTML" = true ]; then
+            echo -e "${BLUE}HTML report available at: ${PROJECT_ROOT}/coverage_html/index.html${NC}"
+        fi
+    fi
 else
     echo -e "${RED}=== Tests Failed (exit code: ${TEST_EXIT_CODE}) ===${NC}"
     echo "Server logs:"
