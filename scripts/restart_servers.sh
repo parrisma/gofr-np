@@ -1,21 +1,37 @@
 #!/bin/bash
 # Restart all GOFRNP servers in correct order: MCP → MCPO → Web
-# Usage: ./restart_servers.sh [--kill-all] [--env PROD|TEST]
-# Default: TEST environment using test/data
+# Usage: ./restart_servers.sh [--kill-all] [--env PROD|TEST] [--host HOST] [--mcp-port PORT] [--mcpo-port PORT] [--web-port PORT]
+# Default: PROD environment using data/
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Source centralized configuration (defaults to TEST)
-export GOFRNP_ENV="${GOFRNP_ENV:-PROD}"  # Default to PROD for this script
+# Source centralized configuration (defaults to PROD for this script)
+export GOFRNP_ENV="${GOFRNP_ENV:-PROD}"
 source "$SCRIPT_DIR/gofrnp.env"
 
-# Parse command line arguments
+# Parse command line arguments (can override env vars)
 while [[ $# -gt 0 ]]; do
     case $1 in
         --env)
             export GOFRNP_ENV="$2"
+            shift 2
+            ;;
+        --host)
+            export GOFRNP_HOST="$2"
+            shift 2
+            ;;
+        --mcp-port)
+            export GOFRNP_MCP_PORT="$2"
+            shift 2
+            ;;
+        --mcpo-port)
+            export GOFRNP_MCPO_PORT="$2"
+            shift 2
+            ;;
+        --web-port)
+            export GOFRNP_WEB_PORT="$2"
             shift 2
             ;;
         --kill-all)
@@ -24,15 +40,17 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown option: $1"
+            echo "Usage: $0 [--kill-all] [--env PROD|TEST] [--host HOST] [--mcp-port PORT] [--mcpo-port PORT] [--web-port PORT]"
             exit 1
             ;;
     esac
 done
 
-# Re-source after GOFRNP_ENV may have changed
+# Re-source after env vars may have changed
 source "$SCRIPT_DIR/gofrnp.env"
 
 # Use variables from gofrnp.env
+HOST="$GOFRNP_HOST"
 MCP_PORT="$GOFRNP_MCP_PORT"
 MCPO_PORT="$GOFRNP_MCPO_PORT"
 WEB_PORT="$GOFRNP_WEB_PORT"
@@ -40,6 +58,7 @@ WEB_PORT="$GOFRNP_WEB_PORT"
 echo "======================================================================="
 echo "GOFRNP Server Restart Script"
 echo "Environment: $GOFRNP_ENV"
+echo "Host: $HOST"
 echo "Data Root: $GOFRNP_DATA"
 echo "======================================================================="
 
@@ -102,9 +121,9 @@ echo "-----------------------------------------------------------------------"
 cd "$GOFRNP_ROOT"
 nohup uv run python -m app.main_mcp \
     --no-auth \
-    --host 0.0.0.0 \
+    --host $HOST \
     --port $MCP_PORT \
-    --web-url "http://localhost:$WEB_PORT" \
+    --web-url "http://$HOST:$WEB_PORT" \
     > "$GOFRNP_LOGS/gofrnp_mcp.log" 2>&1 &
 
 MCP_PID=$!
@@ -136,6 +155,7 @@ echo "-----------------------------------------------------------------------"
 
 nohup uv run python -m app.main_mcpo \
     --no-auth \
+    --mcp-host $HOST \
     --mcp-port $MCP_PORT \
     --mcpo-port $MCPO_PORT \
     > "$GOFRNP_LOGS/gofrnp_mcpo.log" 2>&1 &
@@ -166,7 +186,7 @@ echo "-----------------------------------------------------------------------"
 
 nohup uv run python -m app.main_web \
     --no-auth \
-    --host 0.0.0.0 \
+    --host $HOST \
     --port $WEB_PORT \
     > "$GOFRNP_LOGS/gofrnp_web.log" 2>&1 &
 
@@ -196,9 +216,9 @@ echo "All servers started successfully!"
 echo "======================================================================="
 echo ""
 echo "Access URLs:"
-echo "  MCP Server:    http://localhost:$MCP_PORT/mcp"
-echo "  MCPO Proxy:    http://localhost:$MCPO_PORT"
-echo "  Web Server:    http://localhost:$WEB_PORT"
+echo "  MCP Server:    http://$HOST:$MCP_PORT/mcp"
+echo "  MCPO Proxy:    http://$HOST:$MCPO_PORT"
+echo "  Web Server:    http://$HOST:$WEB_PORT"
 echo ""
 echo "Process IDs:"
 echo "  MCP:   $MCP_PID"

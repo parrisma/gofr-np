@@ -52,6 +52,7 @@ NC='\033[0m' # No Color
 echo -e "${GREEN}=== GOFRNP Test Runner ===${NC}"
 echo "Project root: ${PROJECT_ROOT}"
 echo "Data root: ${GOFRNP_DATA}"
+echo "Host: ${GOFRNP_HOST}"
 echo "JWT Secret: ${GOFRNP_JWT_SECRET:0:20}..."
 echo "MCP Port: ${GOFRNP_MCP_PORT}"
 echo "Web Port: ${GOFRNP_WEB_PORT}"
@@ -140,11 +141,12 @@ start_mcp_server() {
     free_port "${GOFRNP_MCP_PORT}"
     
     nohup uv run python app/main_mcp.py \
+        --host="${GOFRNP_HOST}" \
         --port="${GOFRNP_MCP_PORT}" \
         --jwt-secret="${GOFRNP_JWT_SECRET}" \
         --token-store="${GOFRNP_TOKEN_STORE}" \
         --no-auth \
-        --web-url="http://localhost:${GOFRNP_WEB_PORT}" \
+        --web-url="http://${GOFRNP_HOST}:${GOFRNP_WEB_PORT}" \
         > "${log_file}" 2>&1 &
     
     MCP_PID=$!
@@ -185,6 +187,7 @@ start_web_server() {
     free_port "${GOFRNP_WEB_PORT}"
     
     nohup uv run python app/main_web.py \
+        --host="${GOFRNP_HOST}" \
         --port="${GOFRNP_WEB_PORT}" \
         --jwt-secret="${GOFRNP_JWT_SECRET}" \
         --token-store="${GOFRNP_TOKEN_STORE}" \

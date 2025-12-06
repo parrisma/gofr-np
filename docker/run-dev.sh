@@ -1,21 +1,54 @@
 #!/bin/sh
 
-# Usage: ./run-dev.sh [WEB_PORT] [MCP_PORT] [MCPO_PORT]
-# Defaults: WEB_PORT=8022, MCP_PORT=8020, MCPO_PORT=8021
-# Example: ./run-dev.sh 9012 9010 9011
+# Usage: ./run-dev.sh [options]
+# Options:
+#   --mcp-port PORT    MCP server port (default: 8020 or GOFRNP_MCP_PORT)
+#   --mcpo-port PORT   MCPO proxy port (default: 8021 or GOFRNP_MCPO_PORT)
+#   --web-port PORT    Web server port (default: 8022 or GOFRNP_WEB_PORT)
+#   --network NAME     Docker network (default: gofr-net or GOFRNP_DOCKER_NETWORK)
+#
+# Environment variables can also be set: GOFRNP_MCP_PORT, GOFRNP_MCPO_PORT, GOFRNP_WEB_PORT, GOFRNP_DOCKER_NETWORK
+
+# Defaults from environment or hardcoded
+MCP_PORT="${GOFRNP_MCP_PORT:-8020}"
+MCPO_PORT="${GOFRNP_MCPO_PORT:-8021}"
+WEB_PORT="${GOFRNP_WEB_PORT:-8022}"
+DOCKER_NETWORK="${GOFRNP_DOCKER_NETWORK:-gofr-net}"
 
 # Parse command line arguments
-WEB_PORT=${1:-8022}
-MCP_PORT=${2:-8020}
-MCPO_PORT=${3:-8021}
+while [ $# -gt 0 ]; do
+    case $1 in
+        --mcp-port)
+            MCP_PORT="$2"
+            shift 2
+            ;;
+        --mcpo-port)
+            MCPO_PORT="$2"
+            shift 2
+            ;;
+        --web-port)
+            WEB_PORT="$2"
+            shift 2
+            ;;
+        --network)
+            DOCKER_NETWORK="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [--mcp-port PORT] [--mcpo-port PORT] [--web-port PORT] [--network NAME]"
+            exit 1
+            ;;
+    esac
+done
 
 # Create docker network if it doesn't exist
-echo "Checking for gofr-net network..."
-if ! docker network inspect gofr-net >/dev/null 2>&1; then
-    echo "Creating gofr-net network..."
-    docker network create gofr-net
+echo "Checking for $DOCKER_NETWORK network..."
+if ! docker network inspect $DOCKER_NETWORK >/dev/null 2>&1; then
+    echo "Creating $DOCKER_NETWORK network..."
+    docker network create $DOCKER_NETWORK
 else
-    echo "Network gofr-net already exists"
+    echo "Network $DOCKER_NETWORK already exists"
 fi
 
 # Create docker volume for persistent data if it doesn't exist
@@ -44,14 +77,14 @@ echo "Web port: $WEB_PORT, MCP port: $MCP_PORT, MCPO port: $MCPO_PORT"
 
 docker run -d \
 --name gofrnp_dev \
---network gofr-net \
+--network $DOCKER_NETWORK \
 --user $(id -u):$(id -g) \
 -v "$HOME/devroot/gofr-np":/home/gofr-np/devroot/gofr-np \
 -v "$HOME/.ssh:/home/gofr-np/.ssh:ro" \
 -v gofrnp_data_dev:/home/gofr-np/devroot/gofr-np/data \
--p $MCP_PORT:8020 \
--p $MCPO_PORT:8021 \
--p $WEB_PORT:8022 \
+-p 0.0.0.0:$MCP_PORT:8020 \
+-p 0.0.0.0:$MCPO_PORT:8021 \
+-p 0.0.0.0:$WEB_PORT:8022 \
 gofrnp_dev:latest
 
 if docker ps -q -f name=gofrnp_dev | grep -q .; then
@@ -75,7 +108,7 @@ if docker ps -q -f name=gofrnp_dev | grep -q .; then
     echo "  MCP Server:    http://localhost:$MCP_PORT/mcp"
     echo "  MCPO Proxy:    http://localhost:$MCPO_PORT"
     echo ""
-    echo "Access from gofr-net (other containers):"
+    echo "Access from $DOCKER_NETWORK (other containers):"
     echo "  Web Server:    http://gofrnp_dev:8022"
     echo "  MCP Server:    http://gofrnp_dev:8020/mcp"
     echo "  MCPO Proxy:    http://gofrnp_dev:8021"
@@ -83,6 +116,7 @@ if docker ps -q -f name=gofrnp_dev | grep -q .; then
     echo "Data & Storage:"
     echo "  Volume:        gofrnp_data_dev"
     echo "  Source Mount:  $HOME/devroot/gofr-np (live-reload)"
+    echo "  Network:       $DOCKER_NETWORK"
     echo "==================================================================="
     echo ""
 else

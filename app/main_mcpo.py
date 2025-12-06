@@ -50,6 +50,12 @@ if __name__ == "__main__":
         help="Port for MCPO proxy to listen on (default: 8021)",
     )
     parser.add_argument(
+        "--mcpo-host",
+        type=str,
+        default=os.environ.get("GOFRNP_HOST", "0.0.0.0"),
+        help="Host for MCPO proxy to listen on (default: 0.0.0.0)",
+    )
+    parser.add_argument(
         "--api-key",
         type=str,
         default=None,
@@ -101,6 +107,7 @@ if __name__ == "__main__":
         "Configuration",
         mode=mode_str,
         mcp_endpoint=f"http://{args.mcp_host}:{args.mcp_port}/mcp",
+        mcpo_host=args.mcpo_host,
         mcpo_port=args.mcpo_port,
         has_auth_token=bool(auth_token),
         has_api_key=bool(args.api_key),
@@ -112,6 +119,7 @@ if __name__ == "__main__":
         wrapper = start_mcpo_wrapper(
             mcp_host=args.mcp_host,
             mcp_port=args.mcp_port,
+            mcpo_host=args.mcpo_host,
             mcpo_port=args.mcpo_port,
             mcpo_api_key=args.api_key,
             auth_token=auth_token,
@@ -120,8 +128,8 @@ if __name__ == "__main__":
 
         if wrapper and wrapper.process:
             logger.info("MCPO wrapper started successfully")
-            logger.info(f"OpenAPI endpoint: http://localhost:{args.mcpo_port}")
-            logger.info(f"Documentation: http://localhost:{args.mcpo_port}/docs")
+            logger.info(f"OpenAPI endpoint: http://{args.mcpo_host}:{args.mcpo_port}")
+            logger.info(f"Documentation: http://{args.mcpo_host}:{args.mcpo_port}/docs")
             logger.info("=" * 70)
 
             # Wait for process to complete (or be interrupted)

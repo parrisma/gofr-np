@@ -1,19 +1,23 @@
 #!/bin/sh
 
-# Usage: ./run-openwebui.sh [-r] [-p PORT]
+# Usage: ./run-openwebui.sh [-r] [-p PORT] [-n NETWORK]
 # Options:
-#   -r           Recreate openwebui_volume (drop and recreate if it exists)
-#   -p PORT      Port to expose Open WebUI on (default: 9090)
+#   -r             Recreate openwebui_volume (drop and recreate if it exists)
+#   -p PORT        Port to expose Open WebUI on (default: 9090 or GOFRNP_WEBUI_PORT)
+#   -n NETWORK     Docker network to attach to (default: gofr-net or GOFRNP_DOCKER_NETWORK)
 #
 # Environment Variables:
-#   OPENROUTER_API_KEY    - API key for OpenRouter integration
+#   OPENROUTER_API_KEY      - API key for OpenRouter integration
+#   GOFRNP_WEBUI_PORT       - Default port for Open WebUI
+#   GOFRNP_DOCKER_NETWORK   - Default Docker network
 #
-# Example: ./run-openwebui.sh -r -p 9090
+# Example: ./run-openwebui.sh -r -p 9090 -n gofr-net
 
 RECREATE_VOLUME=false
-WEBUI_PORT=9090
+WEBUI_PORT="${GOFRNP_WEBUI_PORT:-9090}"
+DOCKER_NETWORK="${GOFRNP_DOCKER_NETWORK:-gofr-net}"
 
-while getopts "rp:" opt; do
+while getopts "rp:n:" opt; do
     case $opt in
         r)
             RECREATE_VOLUME=true
@@ -21,10 +25,14 @@ while getopts "rp:" opt; do
         p)
             WEBUI_PORT=$OPTARG
         ;;
+        n)
+            DOCKER_NETWORK=$OPTARG
+        ;;
         \?)
-            echo "Usage: $0 [-r] [-p PORT]"
-            echo "  -r           Recreate openwebui_volume (drop and recreate if it exists)"
-            echo "  -p PORT      Port to expose Open WebUI on (default: 9090)"
+            echo "Usage: $0 [-r] [-p PORT] [-n NETWORK]"
+            echo "  -r             Recreate openwebui_volume (drop and recreate if it exists)"
+            echo "  -p PORT        Port to expose Open WebUI on (default: 9090)"
+            echo "  -n NETWORK     Docker network to attach to (default: gofr-net)"
             exit 1
         ;;
     esac
@@ -47,11 +55,11 @@ else
 fi
 
 # Create docker network if it doesn't exist
-if ! docker network inspect gofr-net >/dev/null 2>&1; then
-    echo "Creating gofr-net network..."
-    docker network create gofr-net
+if ! docker network inspect $DOCKER_NETWORK >/dev/null 2>&1; then
+    echo "Creating $DOCKER_NETWORK network..."
+    docker network create $DOCKER_NETWORK
 else
-    echo "Network gofr-net already exists"
+    echo "Network $DOCKER_NETWORK already exists"
 fi
 
 # Handle openwebui_volume creation/recreation
@@ -96,7 +104,7 @@ echo "Port: $WEBUI_PORT"
 # Build docker run command
 DOCKER_CMD="docker run -d \
 --name openwebui \
---network gofr-net \
+--network $DOCKER_NETWORK \
 -p 0.0.0.0:$WEBUI_PORT:8080 \
 -e TZ=\"$TIMEZONE\""
 
@@ -144,18 +152,19 @@ if docker ps -q -f name=openwebui | grep -q .; then
     echo "From WSL2 Host (Windows):"
     echo "  👉 http://\$(ip addr show eth0 | grep 'inet ' | awk '{print \$2}' | cut -d/ -f1):$WEBUI_PORT"
     echo ""
-    echo "From Containers on gofr-net:"
+    echo "From Containers on $DOCKER_NETWORK:"
     echo "  http://openwebui:8080"
     echo ""
     echo "-------------------------------------------------------------------"
     echo "Data & Storage:"
     echo "  Volume:        openwebui_volume"
     echo "  Shared Dir:    ${WEBUI_SHARE_DIR} -> /data/openwebui_share"
+    echo "  Network:       $DOCKER_NETWORK"
     echo ""
     echo "Management:"
     echo "  View logs:     docker logs -f openwebui"
     echo "  Stop:          docker stop openwebui"
-    echo "  Recreate:      ./docker/run-openwebui.sh -r -p $WEBUI_PORT"
+    echo "  Recreate:      ./docker/run-openwebui.sh -r -p $WEBUI_PORT -n $DOCKER_NETWORK"
     echo "==================================================================="
     echo ""
 else
