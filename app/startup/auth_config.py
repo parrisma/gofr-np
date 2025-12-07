@@ -1,9 +1,15 @@
-"""Authentication configuration utilities for GOFRNP server."""
+"""Authentication configuration utilities for GOFRNP server.
 
-import os
+Re-exports resolve_auth_config from gofr_common.auth.config with
+GOFRNP-specific defaults.
+"""
+
 from typing import Optional, Tuple
+
+from gofr_common.auth.config import resolve_auth_config as _resolve_auth_config
+from gofr_common.logger import Logger
+
 from app.config import Config
-from app.logger import Logger
 
 
 def resolve_auth_config(
@@ -17,7 +23,7 @@ def resolve_auth_config(
 
     Priority order:
     1. Command line arguments
-    2. Environment variables
+    2. Environment variables (GOFRNP_JWT_SECRET, GOFRNP_TOKEN_STORE)
     3. Auto-generation (for JWT secret only)
 
     Args:
@@ -29,29 +35,20 @@ def resolve_auth_config(
     Returns:
         Tuple of (jwt_secret, token_store_path), both None if auth disabled
     """
-    if not require_auth:
-        logger.warning("Authentication disabled via --no-auth flag")
-        return None, None
+    # Use default token store path if not provided
+    default_token_store = str(Config.get_auth_dir() / "tokens.json")
+    effective_token_store = token_store_arg or default_token_store
 
-    # Resolve JWT secret
-    jwt_secret = jwt_secret_arg or os.environ.get("GOFRNP_JWT_SECRET")
-    if not jwt_secret:
-        # Auto-generate a secret for development
-        import secrets
-        jwt_secret = secrets.token_hex(32)
-        logger.warning(
-            "No JWT secret provided, auto-generated one for this session",
-            hint="Set GOFRNP_JWT_SECRET environment variable for persistent tokens",
-        )
+    jwt_secret, token_store_path, _ = _resolve_auth_config(
+        env_prefix="GOFRNP",
+        jwt_secret_arg=jwt_secret_arg,
+        token_store_arg=effective_token_store,
+        require_auth=require_auth,
+        allow_auto_secret=True,
+        exit_on_missing=False,
+        logger=logger,
+    )
 
-    # Resolve token store path
-    token_store_path = token_store_arg or os.environ.get("GOFRNP_TOKEN_STORE")
-    if not token_store_path:
-        # Default to auth directory
-        token_store_path = str(Config.get_auth_dir() / "tokens.json")
-        logger.info(
-            "Using default token store path",
-            path=token_store_path,
-        )
-
-    return jwt_secret, token_store_path
+    # Convert Path to string for backward compatibility
+    token_store_str = str(token_store_path) if token_store_path else None
+    return jwt_secret, token_store_str

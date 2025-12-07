@@ -4,7 +4,7 @@ import sys
 import uuid
 from typing import Any, Optional
 from datetime import datetime
-from .interface import Logger
+from gofr_common.logger import Logger
 
 class JsonFormatter(logging.Formatter):
     """JSON formatter for logging records"""

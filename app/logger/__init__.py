@@ -1,5 +1,4 @@
-"""
-Logger module for gofr-np
+"""Logger module for gofr-np
 
 This module provides a flexible logging interface that allows users to
 drop in their own logger implementations.
@@ -18,7 +17,8 @@ Usage:
             pass
 """
 
-from .interface import Logger
+# Re-export Logger from gofr_common for type compatibility
+from gofr_common.logger import Logger
 from .default_logger import DefaultLogger
 from .console_logger import ConsoleLogger
 from .structured_logger import StructuredLogger
