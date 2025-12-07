@@ -1,62 +1,46 @@
-FROM gofrnp_base:latest
+# GOFR-NP Development Image
+# Extends gofr-base:latest with project-specific dev tools
+FROM gofr-base:latest
 
-# Install Git, GitHub CLI, SSH daemon, and network/debug utilities
+# Switch to root for package installation
+USER root
+
+# Install additional dev tools
 RUN apt-get update && apt-get install -y \
-    git \
     gh \
     openssh-server \
-    # Network utilities
-    iputils-ping \
     dnsutils \
     net-tools \
     netcat-openbsd \
-    curl \
-    wget \
     telnet \
-    # Process/port utilities
     lsof \
     htop \
     strace \
     tcpdump \
-    # Text processing
-    jq \
     vim \
+    jq \
     && rm -rf /var/lib/apt/lists/*
 
-# Set default UID and GID (can be overridden at build time)
-ARG USER_UID=1000
-ARG USER_GID=1000
+# Create project directories
+RUN mkdir -p /home/gofr/devroot/gofr-np/data \
+    && mkdir -p /home/gofr/devroot/gofr-common \
+    && chown -R gofr:gofr /home/gofr/devroot
 
-# Add Unix group 'gofr-np' with configurable GID
-RUN groupadd --system --gid ${USER_GID} gofr-np
-
-# Add user 'gofr-np' with configurable UID and assign to group 'gofr-np'
-RUN useradd --system --uid ${USER_UID} --gid ${USER_GID} --home-dir /home/gofr-np --create-home gofr-np
-
-# Create project directory and data directory, set ownership to gofr-np
-RUN mkdir -p /home/gofr-np/devroot/gofr-np /home/gofr-np/devroot/gofr-np/data && \
-    chown -R gofr-np:gofr-np /home/gofr-np/devroot
-
-# Copy entrypoint script as root before switching users
+# Copy entrypoint
 COPY docker/entrypoint-dev.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Switch to gofr-np user
-USER gofr-np
-WORKDIR /home/gofr-np/devroot/gofr-np
+WORKDIR /home/gofr/devroot/gofr-np
 
-# Configure SSH for user gofr-np only (no exposed port, uses ~/.ssh)
-RUN mkdir -p /home/gofr-np/.ssh && chmod 700 /home/gofr-np/.ssh
+# SSH config for git operations
+RUN mkdir -p /home/gofr/.ssh && chmod 700 /home/gofr/.ssh
 
-# Create a UV virtual environment for development in the project directory
-RUN uv venv /home/gofr-np/devroot/gofr-np/.venv --python=python3.11
+# Create venv (will be populated by entrypoint)
+RUN uv venv /home/gofr/devroot/gofr-np/.venv --python=python3.11
 
-# Set environment variables to use the project venv
-ENV VIRTUAL_ENV=/home/gofr-np/devroot/gofr-np/.venv
-ENV PATH="/home/gofr-np/devroot/gofr-np/.venv/bin:$PATH"
+# Standard GOFR ports (gofr-np uses 8020-8022)
+EXPOSE 8020 8021 8022
 
-# Use entrypoint to handle initialization
+USER gofr
 ENTRYPOINT ["/entrypoint.sh"]
-
-# Keep container running with infinite wait loop
 CMD ["tail", "-f", "/dev/null"]

@@ -15,6 +15,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!lib/gofr-common
 lib64/
 parts/
 sdist/

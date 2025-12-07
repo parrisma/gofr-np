@@ -1,14 +1,41 @@
 #!/bin/bash
+# Build GOFR-NP development image
+# Requires gofr-base:latest to be built first
 
-# Get current user's UID and GID
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Get user's UID/GID for permission matching
 USER_UID=$(id -u)
 USER_GID=$(id -g)
 
-echo "Building gofrnp_dev with USER_UID=$USER_UID and USER_GID=$USER_GID"
+echo "======================================================================="
+echo "Building GOFR-NP Development Image"
+echo "======================================================================="
+echo "User UID: $USER_UID"
+echo "User GID: $USER_GID"
+echo "======================================================================="
 
+# Check if base image exists
+if ! docker image inspect gofr-base:latest >/dev/null 2>&1; then
+    echo "Error: gofr-base:latest not found. Build it first:"
+    echo "  cd lib/gofr-common/docker && ./build-base.sh"
+    exit 1
+fi
+
+echo ""
+echo "Building gofr-np-dev:latest..."
 docker build \
---build-arg USER_UID=$USER_UID \
---build-arg USER_GID=$USER_GID \
--f docker/Dockerfile.dev \
--t gofrnp_dev:latest \
-.
+    -f "$SCRIPT_DIR/Dockerfile.dev" \
+    -t gofr-np-dev:latest \
+    "$PROJECT_ROOT"
+
+echo ""
+echo "======================================================================="
+echo "Build complete: gofr-np-dev:latest"
+echo "======================================================================="
+echo ""
+echo "Image size:"
+docker images gofr-np-dev:latest --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"

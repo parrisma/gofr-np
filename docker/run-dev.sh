@@ -1,15 +1,24 @@
-#!/bin/sh
+#!/bin/bash
+# Run GOFR-NP development container
+# Uses gofr-np-dev:latest image (built from gofr-base:latest)
+# Standard user: gofr (UID 1000, GID 1000)
 
-# Usage: ./run-dev.sh [options]
-# Options:
-#   --mcp-port PORT    MCP server port (default: 8020 or GOFRNP_MCP_PORT)
-#   --mcpo-port PORT   MCPO proxy port (default: 8021 or GOFRNP_MCPO_PORT)
-#   --web-port PORT    Web server port (default: 8022 or GOFRNP_WEB_PORT)
-#   --network NAME     Docker network (default: gofr-net or GOFRNP_DOCKER_NETWORK)
-#
-# Environment variables can also be set: GOFRNP_MCP_PORT, GOFRNP_MCPO_PORT, GOFRNP_WEB_PORT, GOFRNP_DOCKER_NETWORK
+set -e
 
-# Defaults from environment or hardcoded
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# gofr-common is now a git submodule at lib/gofr-common, no separate mount needed
+
+# Standard GOFR user - all projects use same user
+GOFR_USER="gofr"
+GOFR_UID=1000
+GOFR_GID=1000
+
+# Container and image names
+CONTAINER_NAME="gofr-np-dev"
+IMAGE_NAME="gofr-np-dev:latest"
+
+# Defaults from environment or hardcoded (gofr-np uses 8020-8022)
 MCP_PORT="${GOFRNP_MCP_PORT:-8020}"
 MCPO_PORT="${GOFRNP_MCPO_PORT:-8021}"
 WEB_PORT="${GOFRNP_WEB_PORT:-8022}"
@@ -42,84 +51,59 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+echo "======================================================================="
+echo "Starting GOFR-NP Development Container"
+echo "======================================================================="
+echo "User: ${GOFR_USER} (UID=${GOFR_UID}, GID=${GOFR_GID})"
+echo "Ports: MCP=$MCP_PORT, MCPO=$MCPO_PORT, Web=$WEB_PORT"
+echo "Network: $DOCKER_NETWORK"
+echo "======================================================================="
+
 # Create docker network if it doesn't exist
-echo "Checking for $DOCKER_NETWORK network..."
 if ! docker network inspect $DOCKER_NETWORK >/dev/null 2>&1; then
-    echo "Creating $DOCKER_NETWORK network..."
+    echo "Creating network: $DOCKER_NETWORK"
     docker network create $DOCKER_NETWORK
-else
-    echo "Network $DOCKER_NETWORK already exists"
 fi
 
-# Create docker volume for persistent data if it doesn't exist
-echo "Checking for gofrnp_data_dev volume..."
-if ! docker volume inspect gofrnp_data_dev >/dev/null 2>&1; then
-    echo "Creating gofrnp_data_dev volume..."
-    docker volume create gofrnp_data_dev
-    VOLUME_CREATED=true
-else
-    echo "Volume gofrnp_data_dev already exists"
-    VOLUME_CREATED=false
+# Create docker volume for persistent data
+VOLUME_NAME="gofr-np-data-dev"
+if ! docker volume inspect $VOLUME_NAME >/dev/null 2>&1; then
+    echo "Creating volume: $VOLUME_NAME"
+    docker volume create $VOLUME_NAME
 fi
 
-# Stop and remove existing container if it exists
-echo "Stopping existing gofrnp_dev container..."
-docker stop gofrnp_dev 2>/dev/null || true
+# Stop and remove existing container
+if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+    echo "Stopping existing container: $CONTAINER_NAME"
+    docker stop "$CONTAINER_NAME" 2>/dev/null || true
+    docker rm "$CONTAINER_NAME" 2>/dev/null || true
+fi
 
-echo "Removing existing gofrnp_dev container..."
-docker rm gofrnp_dev 2>/dev/null || true
-
-echo "Starting new gofrnp_dev container..."
-echo "Mounting $HOME/devroot/gofr-np to /home/gofr-np/devroot/gofr-np in container"
-echo "Mounting $HOME/.ssh to /home/gofr-np/.ssh (read-only) in container"
-echo "Mounting gofrnp_data_dev volume to /home/gofr-np/devroot/gofr-np/data in container"
-echo "Web port: $WEB_PORT, MCP port: $MCP_PORT, MCPO port: $MCPO_PORT"
-
+# Run container
 docker run -d \
---name gofrnp_dev \
---network $DOCKER_NETWORK \
---user $(id -u):$(id -g) \
--v "$HOME/devroot/gofr-np":/home/gofr-np/devroot/gofr-np \
--v "$HOME/.ssh:/home/gofr-np/.ssh:ro" \
--v gofrnp_data_dev:/home/gofr-np/devroot/gofr-np/data \
--p 0.0.0.0:$MCP_PORT:8020 \
--p 0.0.0.0:$MCPO_PORT:8021 \
--p 0.0.0.0:$WEB_PORT:8022 \
-gofrnp_dev:latest
+    --name "$CONTAINER_NAME" \
+    --network "$DOCKER_NETWORK" \
+    -p ${MCP_PORT}:8020 \
+    -p ${MCPO_PORT}:8021 \
+    -p ${WEB_PORT}:8022 \
+    -v "$PROJECT_ROOT:/home/gofr/devroot/gofr-np:rw" \
+    -v ${VOLUME_NAME}:/home/gofr/devroot/gofr-np/data:rw \
+    -e GOFRNP_ENV=development \
+    -e GOFRNP_DEBUG=true \
+    -e GOFRNP_LOG_LEVEL=DEBUG \
+    "$IMAGE_NAME"
 
-if docker ps -q -f name=gofrnp_dev | grep -q .; then
-    echo "Container gofrnp_dev is now running"
-    
-    # Fix volume permissions if it was just created
-    if [ "$VOLUME_CREATED" = true ]; then
-        echo "Fixing permissions on newly created volume..."
-        docker exec -u root gofrnp_dev chown -R gofr-np:gofr-np /home/gofr-np/devroot/gofr-np/data
-        echo "Volume permissions fixed"
-    fi
-    
-    echo ""
-    echo "==================================================================="
-    echo "Development Container Access:"
-    echo "  Shell:         docker exec -it gofrnp_dev /bin/bash"
-    echo "  VS Code:       Attach to container 'gofrnp_dev'"
-    echo ""
-    echo "Access from Host Machine:"
-    echo "  Web Server:    http://localhost:$WEB_PORT"
-    echo "  MCP Server:    http://localhost:$MCP_PORT/mcp"
-    echo "  MCPO Proxy:    http://localhost:$MCPO_PORT"
-    echo ""
-    echo "Access from $DOCKER_NETWORK (other containers):"
-    echo "  Web Server:    http://gofrnp_dev:8022"
-    echo "  MCP Server:    http://gofrnp_dev:8020/mcp"
-    echo "  MCPO Proxy:    http://gofrnp_dev:8021"
-    echo ""
-    echo "Data & Storage:"
-    echo "  Volume:        gofrnp_data_dev"
-    echo "  Source Mount:  $HOME/devroot/gofr-np (live-reload)"
-    echo "  Network:       $DOCKER_NETWORK"
-    echo "==================================================================="
-    echo ""
-else
-    echo "ERROR: Container gofrnp_dev failed to start"
-    exit 1
-fi
+echo ""
+echo "======================================================================="
+echo "Container started: $CONTAINER_NAME"
+echo "======================================================================="
+echo ""
+echo "Ports:"
+echo "  - $MCP_PORT: MCP server"
+echo "  - $MCPO_PORT: MCPO proxy"
+echo "  - $WEB_PORT: Web interface"
+echo ""
+echo "Useful commands:"
+echo "  docker logs -f $CONTAINER_NAME          # Follow logs"
+echo "  docker exec -it $CONTAINER_NAME bash    # Shell access"
+echo "  docker stop $CONTAINER_NAME             # Stop container"
