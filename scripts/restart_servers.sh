@@ -1,17 +1,26 @@
 #!/bin/bash
-# Restart all GOFRNP servers in correct order: MCP → MCPO → Web
-# Usage: ./restart_servers.sh [--kill-all] [--env PROD|TEST] [--host HOST] [--mcp-port PORT] [--mcpo-port PORT] [--web-port PORT]
-# Default: PROD environment using data/
+# GOFR-NP Server Restart Script
+# Wrapper for the shared restart_servers.sh script
+#
+# Usage: ./restart_servers.sh [--kill-all] [--env PROD|TEST] [--host HOST] 
+#        [--mcp-port PORT] [--mcpo-port PORT] [--web-port PORT]
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMMON_SCRIPTS="$SCRIPT_DIR/../../gofr-common/scripts"
 
-# Source centralized configuration (defaults to PROD for this script)
+# Check for lib/gofr-common location first (inside container)
+if [ -d "$SCRIPT_DIR/../lib/gofr-common/scripts" ]; then
+    COMMON_SCRIPTS="$SCRIPT_DIR/../lib/gofr-common/scripts"
+fi
+
+# Source centralized configuration (defaults to PROD for restart script)
 export GOFRNP_ENV="${GOFRNP_ENV:-PROD}"
 source "$SCRIPT_DIR/gofrnp.env"
 
-# Parse command line arguments (can override env vars)
+# Parse command line arguments (these override env vars)
+PASSTHROUGH_ARGS=()
 while [[ $# -gt 0 ]]; do
     case $1 in
         --env)
@@ -34,8 +43,9 @@ while [[ $# -gt 0 ]]; do
             export GOFRNP_WEB_PORT="$2"
             shift 2
             ;;
-        --kill-all)
-            KILL_ALL=true
+        --kill-all|--help)
+            # Pass through to common script
+            PASSTHROUGH_ARGS+=("$1")
             shift
             ;;
         *)
@@ -49,187 +59,22 @@ done
 # Re-source after env vars may have changed
 source "$SCRIPT_DIR/gofrnp.env"
 
-# Use variables from gofrnp.env
-HOST="$GOFRNP_HOST"
-MCP_PORT="$GOFRNP_MCP_PORT"
-MCPO_PORT="$GOFRNP_MCPO_PORT"
-WEB_PORT="$GOFRNP_WEB_PORT"
+# Map project-specific vars to common vars
+export GOFR_PROJECT_NAME="gofr-np"
+export GOFR_PROJECT_ROOT="$GOFRNP_ROOT"
+export GOFR_LOGS_DIR="$GOFRNP_LOGS"
+export GOFR_DATA_DIR="$GOFRNP_DATA"
+export GOFR_ENV="$GOFRNP_ENV"
+export GOFR_MCP_PORT="$GOFRNP_MCP_PORT"
+export GOFR_MCPO_PORT="$GOFRNP_MCPO_PORT"
+export GOFR_WEB_PORT="$GOFRNP_WEB_PORT"
+export GOFR_MCP_HOST="$GOFRNP_HOST"
+export GOFR_MCPO_HOST="$GOFRNP_HOST"
+export GOFR_WEB_HOST="$GOFRNP_HOST"
+export GOFR_NETWORK="$GOFRNP_DOCKER_NETWORK"
 
-echo "======================================================================="
-echo "GOFRNP Server Restart Script"
-echo "Environment: $GOFRNP_ENV"
-echo "Host: $HOST"
-echo "Data Root: $GOFRNP_DATA"
-echo "======================================================================="
+# Extra args for MCP server (project-specific)
+export GOFR_MCP_EXTRA_ARGS="--web-url http://$GOFRNP_HOST:$GOFRNP_WEB_PORT"
 
-# Kill existing processes
-echo ""
-echo "Step 1: Stopping existing servers..."
-echo "-----------------------------------------------------------------------"
-
-# Function to kill process and wait for it to die
-kill_and_wait() {
-    local pattern=$1
-    local name=$2
-    local pids=$(pgrep -f "$pattern")
-    
-    if [ -z "$pids" ]; then
-        echo "  - No $name running"
-        return 0
-    fi
-    
-    echo "  Killing $name (PIDs: $pids)..."
-    pkill -9 -f "$pattern"
-    
-    # Wait for processes to die (max 10 seconds)
-    for i in {1..20}; do
-        if ! pgrep -f "$pattern" >/dev/null 2>&1; then
-            echo "  ✓ $name stopped"
-            return 0
-        fi
-        sleep 0.5
-    done
-    
-    echo "  ⚠ Warning: $name may still be running"
-    return 1
-}
-
-# Kill servers in reverse order (Web, MCPO, MCP)
-kill_and_wait "app.main_web" "Web server"
-kill_and_wait "mcpo --port" "MCPO wrapper"
-kill_and_wait "app.main_mcpo" "MCPO wrapper process"
-kill_and_wait "app.main_mcp" "MCP server"
-
-# Wait for ports to be released
-echo ""
-echo "Waiting for ports to be released..."
-sleep 2
-
-# Check if --kill-all flag is set
-if [ "$KILL_ALL" = true ]; then
-    echo ""
-    echo "Kill-all mode: Exiting without restart"
-    echo "======================================================================="
-    exit 0
-fi
-
-# Start MCP server
-echo ""
-echo "Step 2: Starting MCP server (port $MCP_PORT)..."
-echo "-----------------------------------------------------------------------"
-
-cd "$GOFRNP_ROOT"
-nohup uv run python -m app.main_mcp \
-    --no-auth \
-    --host $HOST \
-    --port $MCP_PORT \
-    --web-url "http://$HOST:$WEB_PORT" \
-    > "$GOFRNP_LOGS/gofrnp_mcp.log" 2>&1 &
-
-MCP_PID=$!
-echo "  MCP server starting (PID: $MCP_PID)"
-echo "  Log: $GOFRNP_LOGS/gofrnp_mcp.log"
-
-# Wait for MCP to be ready by checking if it responds to requests
-echo "  Waiting for MCP to be ready..."
-for i in {1..30}; do
-    # MCP requires specific headers, just check if port is responding
-    if curl -s -X GET http://localhost:$MCP_PORT/mcp/ \
-        -H "Accept: application/json, text/event-stream" \
-        2>&1 | grep -q "jsonrpc"; then
-        echo "  ✓ MCP server ready"
-        break
-    fi
-    sleep 1
-    if [ $i -eq 30 ]; then
-        echo "  ✗ ERROR: MCP server failed to start"
-        tail -20 "$GOFRNP_LOGS/gofrnp_mcp.log"
-        exit 1
-    fi
-done
-
-# Start MCPO wrapper
-echo ""
-echo "Step 3: Starting MCPO wrapper (port $MCPO_PORT)..."
-echo "-----------------------------------------------------------------------"
-
-nohup uv run python -m app.main_mcpo \
-    --no-auth \
-    --mcp-host $HOST \
-    --mcp-port $MCP_PORT \
-    --mcpo-port $MCPO_PORT \
-    > "$GOFRNP_LOGS/gofrnp_mcpo.log" 2>&1 &
-
-MCPO_PID=$!
-echo "  MCPO wrapper starting (PID: $MCPO_PID)"
-echo "  Log: $GOFRNP_LOGS/gofrnp_mcpo.log"
-
-# Wait for MCPO to be ready by calling openapi endpoint
-echo "  Waiting for MCPO to be ready..."
-for i in {1..30}; do
-    if curl -s http://localhost:$MCPO_PORT/openapi.json | grep -q "openapi"; then
-        echo "  ✓ MCPO wrapper ready"
-        break
-    fi
-    sleep 1
-    if [ $i -eq 30 ]; then
-        echo "  ✗ ERROR: MCPO wrapper failed to start"
-        tail -20 "$GOFRNP_LOGS/gofrnp_mcpo.log"
-        exit 1
-    fi
-done
-
-# Start Web server
-echo ""
-echo "Step 4: Starting Web server (port $WEB_PORT)..."
-echo "-----------------------------------------------------------------------"
-
-nohup uv run python -m app.main_web \
-    --no-auth \
-    --host $HOST \
-    --port $WEB_PORT \
-    > "$GOFRNP_LOGS/gofrnp_web.log" 2>&1 &
-
-WEB_PID=$!
-echo "  Web server starting (PID: $WEB_PID)"
-echo "  Log: $GOFRNP_LOGS/gofrnp_web.log"
-
-# Wait for Web server to be ready by calling ping endpoint
-echo "  Waiting for Web server to be ready..."
-for i in {1..30}; do
-    if curl -s http://localhost:$WEB_PORT/ping 2>&1 | grep -q '"status":"ok"'; then
-        echo "  ✓ Web server ready"
-        break
-    fi
-    sleep 1
-    if [ $i -eq 30 ]; then
-        echo "  ✗ ERROR: Web server failed to start"
-        tail -20 "$GOFRNP_LOGS/gofrnp_web.log"
-        exit 1
-    fi
-done
-
-# Summary
-echo ""
-echo "======================================================================="
-echo "All servers started successfully!"
-echo "======================================================================="
-echo ""
-echo "Access URLs:"
-echo "  MCP Server:    http://$HOST:$MCP_PORT/mcp"
-echo "  MCPO Proxy:    http://$HOST:$MCPO_PORT"
-echo "  Web Server:    http://$HOST:$WEB_PORT"
-echo ""
-echo "Process IDs:"
-echo "  MCP:   $MCP_PID"
-echo "  MCPO:  $MCPO_PID"
-echo "  Web:   $WEB_PID"
-echo ""
-echo "Logs:"
-echo "  MCP:   $GOFRNP_LOGS/gofrnp_mcp.log"
-echo "  MCPO:  $GOFRNP_LOGS/gofrnp_mcpo.log"
-echo "  Web:   $GOFRNP_LOGS/gofrnp_web.log"
-echo ""
-echo "To stop all servers: $0 --kill-all"
-echo "To view logs: tail -f $GOFRNP_LOGS/gofrnp_*.log"
-echo "======================================================================="
+# Call shared script
+source "$COMMON_SCRIPTS/restart_servers.sh" "${PASSTHROUGH_ARGS[@]}"
