@@ -15,7 +15,7 @@ from mcp.server import Server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.types import TextContent, Tool
 
-from gofr_common.mcp import json_text, error_response
+from gofr_common.mcp import json_text
 
 from app.auth import AuthService
 from app.logger import session_logger as logger
@@ -123,21 +123,12 @@ async def lifespan(starlette_app) -> AsyncIterator[None]:
         yield
 
 
-from starlette.applications import Starlette  # noqa: E402 - after async defs
-from starlette.middleware.cors import CORSMiddleware  # noqa: E402
-from starlette.routing import Mount  # noqa: E402
+from gofr_common.web import create_mcp_starlette_app  # noqa: E402 - after async defs
 
-starlette_app = Starlette(
-    debug=False,
-    routes=[Mount("/mcp/", app=handle_streamable_http)],
+starlette_app = create_mcp_starlette_app(
+    mcp_handler=handle_streamable_http,
     lifespan=lifespan,
-)
-
-starlette_app = CORSMiddleware(
-    starlette_app,
-    allow_origins=["*"],
-    allow_methods=["GET", "POST", "DELETE"],
-    expose_headers=["Mcp-Session-Id"],
+    env_prefix="GOFR_NP",
 )
 
 
