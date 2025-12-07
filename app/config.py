@@ -4,7 +4,6 @@ Re-exports configuration from gofr_common.config with GOFR_NP prefix.
 """
 
 from pathlib import Path
-from typing import Optional
 
 from gofr_common.config import (
     Config as BaseConfig,
