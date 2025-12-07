@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from mcp.server import Server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.types import TextContent, Tool
+
+from gofr_common.mcp import json_text, error_response
 
 from app.auth import AuthService
 from app.logger import session_logger as logger
@@ -31,8 +32,8 @@ app = Server("gofr-np-service")
 
 
 def _json_text(data: Dict[str, Any]) -> TextContent:
-    """Create JSON text content."""
-    return TextContent(type="text", text=json.dumps(data, indent=2))
+    """Create JSON text content - uses gofr_common."""
+    return json_text(data)
 
 
 # Built-in tools (not from math engine)
