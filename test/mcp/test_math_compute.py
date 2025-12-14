@@ -1,6 +1,7 @@
 """Test math_compute MCP tool."""
 
 import json
+import os
 import pytest
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
@@ -9,7 +10,8 @@ from mcp.client.streamable_http import streamablehttp_client
 @pytest.fixture
 def mcp_url():
     """MCP server URL."""
-    return "http://localhost:8020/mcp"
+    port = os.environ.get("GOFR_NP_MCP_PORT", "8060")
+    return f"http://localhost:{port}/mcp"
 
 
 def extract_text(result) -> str:

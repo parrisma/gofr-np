@@ -1,0 +1,61 @@
+# gofr-np Production Dockerfile
+# Single-stage build with supervisor for MCP + MCPO + Web servers
+FROM python:3.11-slim
+
+# Install system dependencies and supervisor
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    supervisor \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for fast Python package management
+RUN pip install --no-cache-dir uv
+
+# Create gofr-np user and group
+RUN groupadd --system gofr-np && \
+    useradd --system --gid gofr-np --home-dir /home/gofr-np --create-home gofr-np
+
+# Create application directories
+RUN mkdir -p /home/gofr-np/app \
+    && mkdir -p /home/gofr-np/data/storage \
+    && mkdir -p /home/gofr-np/data/auth \
+    && mkdir -p /home/gofr-np/logs \
+    && mkdir -p /var/log/supervisor \
+    && chown -R gofr-np:gofr-np /home/gofr-np \
+    && chown -R gofr-np:gofr-np /var/log/supervisor
+
+WORKDIR /home/gofr-np
+
+# Copy project files
+COPY --chown=gofr-np:gofr-np pyproject.toml /home/gofr-np/
+COPY --chown=gofr-np:gofr-np README.md /home/gofr-np/
+COPY --chown=gofr-np:gofr-np app/ /home/gofr-np/app/
+COPY --chown=gofr-np:gofr-np lib/ /home/gofr-np/lib/
+
+# Create venv and install dependencies (as root to avoid permission issues)
+RUN uv venv /home/gofr-np/.venv --python=python3.11
+
+ENV VIRTUAL_ENV=/home/gofr-np/.venv
+ENV PATH="/home/gofr-np/.venv/bin:$PATH"
+
+# Install gofr-common from lib/, then the main project
+RUN uv pip install -e ./lib/gofr-common && uv pip install -e .
+
+# Install mcpo for OpenAPI proxy
+RUN uv pip install mcpo
+
+# Fix ownership after installation
+RUN chown -R gofr-np:gofr-np /home/gofr-np
+
+# Copy entrypoint script
+COPY --chown=gofr-np:gofr-np docker/entrypoint-prod.sh /home/gofr-np/entrypoint-prod.sh
+RUN chmod +x /home/gofr-np/entrypoint-prod.sh
+
+# Expose ports
+# 8060: MCP Server
+# 8061: MCPO Server  
+# 8062: Web Server
+EXPOSE 8060 8061 8062
+
+# Run as root for supervisor (it will manage user processes)
+ENTRYPOINT ["/home/gofr-np/entrypoint-prod.sh"]
