@@ -18,7 +18,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-SOURCE_DIR="$PROJECT_ROOT/lib/gofr-common/secrets"
+SOURCE_DIR=""
+PROJECT_SECRETS_DIR="$PROJECT_ROOT/secrets"
+COMMON_SECRETS_DIR="$PROJECT_ROOT/lib/gofr-common/secrets"
 PROJECT_CREDS_DIR="$PROJECT_ROOT/secrets/service_creds"
 
 # Both volumes to seed (shared across all GOFR projects)
@@ -29,9 +31,20 @@ info()  { echo "[INFO]  $*"; }
 ok()    { echo "[OK]    $*"; }
 err()   { echo "[FAIL]  $*" >&2; }
 
-# ---- Verify source exists ---------------------------------------------------
-if [ ! -d "$SOURCE_DIR" ] || [ ! -f "$SOURCE_DIR/vault_root_token" ]; then
-    err "Source secrets not found at $SOURCE_DIR"
+# ---- Select and verify source secrets dir -----------------------------------
+# gofr-np stores bootstrap/test harness secrets under ./secrets.
+# Some projects may also carry secrets under lib/gofr-common/secrets.
+if [ -d "$PROJECT_SECRETS_DIR" ] && [ -f "$PROJECT_SECRETS_DIR/vault_root_token" ]; then
+    SOURCE_DIR="$PROJECT_SECRETS_DIR"
+elif [ -d "$COMMON_SECRETS_DIR" ] && [ -f "$COMMON_SECRETS_DIR/vault_root_token" ]; then
+    SOURCE_DIR="$COMMON_SECRETS_DIR"
+fi
+
+if [ -z "$SOURCE_DIR" ]; then
+    err "Source secrets not found"
+    echo "  Tried:"
+    echo "    - $PROJECT_SECRETS_DIR"
+    echo "    - $COMMON_SECRETS_DIR"
     echo "  Expected: vault_root_token, vault_unseal_key, service_creds/"
     exit 1
 fi
