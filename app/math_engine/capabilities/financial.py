@@ -15,6 +15,39 @@ from app.logger.decorators import log_execution_time
 from app.math_engine.base import MathCapability, MathResult, ToolDefinition
 from app.exceptions import InvalidInputError
 
+import math
+
+
+def _nan_to_none(values: list) -> list:
+    """Convert NaN/Inf values to None for strict JSON compatibility.
+
+    MCP clients expect valid JSON (RFC 8259) which does not allow NaN/Inf.
+    Numpy arrays converted via .tolist() may still contain numpy scalar types
+    (np.float64, etc.), so we handle both Python and numpy numeric types.
+    """
+
+    sanitized: list = []
+    for v in values:
+        if isinstance(v, list):
+            sanitized.append(_nan_to_none(v))
+            continue
+
+        if isinstance(v, (np.integer,)):
+            sanitized.append(int(v))
+            continue
+
+        if isinstance(v, (float, np.floating)):
+            fv = float(v)
+            if math.isnan(fv) or math.isinf(fv):
+                sanitized.append(None)
+            else:
+                sanitized.append(fv)
+            continue
+
+        sanitized.append(v)
+
+    return sanitized
+
 
 class FinancialCapability(MathCapability):
     """Financial calculations and analysis."""
@@ -543,7 +576,7 @@ class FinancialCapability(MathCapability):
             full_sma[window-1:] = sma
             
             return MathResult({
-                "values": full_sma.tolist(),
+                "values": _nan_to_none(full_sma.tolist()),
                 "indicator": "sma",
                 "window": window
             }, [], "object")
@@ -614,7 +647,7 @@ class FinancialCapability(MathCapability):
             rsi[:window] = np.nan
             
             return MathResult({
-                "values": rsi.tolist(),
+                "values": _nan_to_none(rsi.tolist()),
                 "indicator": "rsi",
                 "window": window
             }, [], "object")
@@ -678,9 +711,9 @@ class FinancialCapability(MathCapability):
             full_lower[window-1:] = sma - num_std * rolling_std
             
             return MathResult({
-                "middle_band": full_sma.tolist(),
-                "upper_band": full_upper.tolist(),
-                "lower_band": full_lower.tolist(),
+                "middle_band": _nan_to_none(full_sma.tolist()),
+                "upper_band": _nan_to_none(full_upper.tolist()),
+                "lower_band": _nan_to_none(full_lower.tolist()),
                 "indicator": "bollinger"
             }, [], "object")
 
@@ -703,10 +736,10 @@ class FinancialCapability(MathCapability):
             sma_long = get_sma(prices, long_w)
             
             # Check last point
-            current_short = sma_short[-1]
-            current_long = sma_long[-1]
-            prev_short = sma_short[-2]
-            prev_long = sma_long[-2]
+            current_short = float(sma_short[-1])
+            current_long = float(sma_long[-1])
+            prev_short = float(sma_short[-2])
+            prev_long = float(sma_long[-2])
             
             signal = "neutral"
             if prev_short > prev_long and current_short < current_long:

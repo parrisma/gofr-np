@@ -29,6 +29,55 @@ Errors are returned as:
 
 ---
 
+## Authentication
+
+All MCP tools enforce Vault-backed JWT authentication except where noted.
+
+### Token-optional tools
+
+`ping` and `math_list_operations` work without a token. If a token IS supplied it is still verified; an invalid token is rejected even on these tools.
+
+### Auth-required tools
+
+Every other tool requires a valid token. A missing or invalid token returns an error response (see below) and the tool is NOT executed.
+
+### Passing the token
+
+Three methods, checked in this order:
+
+1. `auth_token` argument (preferred) -- include `"auth_token": "<jwt>"` in the tool call arguments.
+2. `token` argument (legacy) -- include `"token": "<jwt>"`.
+3. `Authorization` header -- send `Authorization: Bearer <jwt>` at the HTTP transport level (Streamable-HTTP / SSE).
+
+The first non-empty value wins. `auth_token` and `token` are stripped from the arguments before the tool handler sees them.
+
+### Group injection
+
+On successful verification the server picks the caller's effective group (first non-public group, falling back to `"public"`) and injects it as `arguments["group"]`. Tool handlers may use this for access-scoped behaviour.
+
+### Error responses
+
+Missing token (auth-required tool):
+
+```json
+{
+  "error": "AUTH_REQUIRED",
+  "recovery": "Provide auth_token (preferred), token (legacy), or Authorization: Bearer <token>"
+}
+```
+
+Invalid / expired / revoked token:
+
+```json
+{
+  "error": "AUTH_INVALID",
+  "detail": "<reason>",
+  "recovery": "Provide a valid, non-expired token issued by the GOFR auth tooling"
+}
+```
+
+---
+
 ## Discovery Tools
 
 Tools for connectivity checks and basic discovery.
@@ -36,6 +85,8 @@ Tools for connectivity checks and basic discovery.
 ---
 
 ### ping
+
+**Auth:** token optional
 
 Health check. Returns `{status: "ok", service: "gofr-np"}` when the MCP server is reachable.
 
@@ -50,6 +101,8 @@ Health check. Returns `{status: "ok", service: "gofr-np"}` when the MCP server i
 ---
 
 ### math_compute
+
+**Auth:** required
 
 Perform element-wise mathematical operations on scalars or arrays with broadcasting.
 
@@ -70,6 +123,8 @@ Perform element-wise mathematical operations on scalars or arrays with broadcast
 
 ### math_list_operations
 
+**Auth:** token optional
+
 List all supported element-wise operations.
 
 **Parameters:** none
@@ -87,6 +142,8 @@ List all supported element-wise operations.
 ---
 
 ### curve_fit
+
+**Auth:** required
 
 Fit a model to X/Y data with automatic model selection and robust outlier handling.
 
@@ -119,6 +176,8 @@ Fit a model to X/Y data with automatic model selection and robust outlier handli
 
 ### curve_predict
 
+**Auth:** required
+
 Predict Y values for new X values using a previously fitted model.
 
 **Parameters**
@@ -139,6 +198,8 @@ Predict Y values for new X values using a previously fitted model.
 ---
 
 ### financial_pv
+
+**Auth:** required
 
 Calculate the present value (PV) of cash flows using a scalar discount rate or a per-period yield curve.
 
@@ -167,6 +228,8 @@ Calculate the present value (PV) of cash flows using a scalar discount rate or a
 
 ### financial_convert_rate
 
+**Auth:** required
+
 Convert an interest rate between compounding conventions.
 
 **Parameters**
@@ -182,6 +245,8 @@ Convert an interest rate between compounding conventions.
 ---
 
 ### financial_option_price
+
+**Auth:** required
 
 Price an option and compute Greeks using a Cox-Ross-Rubinstein (CRR) binomial tree.
 
@@ -210,6 +275,8 @@ Price an option and compute Greeks using a Cox-Ross-Rubinstein (CRR) binomial tr
 
 ### financial_bond_price
 
+**Auth:** required
+
 Compute bond price and risk metrics (duration/convexity).
 
 **Parameters**
@@ -227,6 +294,8 @@ Compute bond price and risk metrics (duration/convexity).
 ---
 
 ### financial_technical_indicators
+
+**Auth:** required
 
 Compute technical analysis indicators over a price series (and a few scalar-style metrics).
 

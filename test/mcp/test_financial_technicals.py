@@ -1,7 +1,6 @@
 """Tests for Financial Technical Indicators."""
 
 import pytest
-import numpy as np
 from app.math_engine.capabilities.financial import FinancialCapability
 
 @pytest.fixture
@@ -22,9 +21,9 @@ class TestFinancialTechnicals:
         # SMA(3) of [10, 11, 12] = 11
         # SMA(3) of [11, 12, 13] = 12
         # SMA(3) of [12, 13, 14] = 13
-        # First 2 should be NaN
-        assert np.isnan(values[0])
-        assert np.isnan(values[1])
+        # First 2 should be null/None (JSON-safe padding)
+        assert values[0] is None
+        assert values[1] is None
         assert values[2] == pytest.approx(11.0)
         assert values[3] == pytest.approx(12.0)
         assert values[4] == pytest.approx(13.0)
