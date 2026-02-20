@@ -38,8 +38,8 @@ fi
 
 export GOFR_NP_ENV="TEST"
 
-if [ -f "${SCRIPT_DIR}/gofrnp.env" ]; then
-    source "${SCRIPT_DIR}/gofrnp.env"
+if [ -f "${SCRIPT_DIR}/project.env" ]; then
+    source "${SCRIPT_DIR}/project.env"
 fi
 
 if [ -d "${PROJECT_ROOT}/lib/gofr-common/src" ]; then
@@ -49,7 +49,7 @@ else
 fi
 
 export GOFR_NP_AUTH_BACKEND="${GOFR_NP_AUTH_BACKEND:-vault}"
-export GOFR_NP_VAULT_URL="${GOFR_NP_VAULT_URL:-http://gofr-vault-test:8201}"
+export GOFR_NP_VAULT_URL="${GOFR_NP_VAULT_URL:-http://gofr-np-vault-test:8201}"
 export GOFR_NP_VAULT_PATH_PREFIX="${GOFR_NP_VAULT_PATH_PREFIX:-gofr/auth}"
 export GOFR_NP_VAULT_MOUNT="${GOFR_NP_VAULT_MOUNT:-secret}"
 

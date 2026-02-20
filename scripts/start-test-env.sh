@@ -23,8 +23,8 @@ PORTS_ENV="${PROJECT_ROOT}/lib/gofr-common/config/gofr_ports.env"
 
 VAULT_DOCKERFILE="${PROJECT_ROOT}/lib/gofr-common/docker/Dockerfile.vault"
 VAULT_IMAGE="gofr-vault:latest"
-VAULT_CONTAINER="gofr-vault-test"
-VAULT_INTERNAL_URL="http://gofr-vault-test:8201"
+VAULT_CONTAINER="gofr-np-vault-test"
+VAULT_INTERNAL_URL="http://gofr-np-vault-test:8201"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -235,7 +235,7 @@ tear_down() {
         gofr-np-mcp-test \
         gofr-np-mcpo-test \
         gofr-np-web-test \
-        gofr-vault-test \
+        gofr-np-vault-test \
         2>/dev/null || true
     ok "Stack removed."
 }

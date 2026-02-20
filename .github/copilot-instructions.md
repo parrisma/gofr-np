@@ -93,6 +93,4 @@ SCRIPTS (use these; do not reinvent workflows):
 | Script | Purpose |
 |--------|---------|
 | `scripts/run_tests.sh` | Run tests (unit, integration, coverage). THE test entry point. |
-| `scripts/restart_servers.sh` | Restart running servers. |
 | `scripts/start-test-env.sh` | Spin up ephemeral test services (Vault, SEQ, etc.). |
-| `scripts/token_manager.sh` | Manage access tokens. |

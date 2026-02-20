@@ -45,7 +45,7 @@ Non-goals are unchanged from the spec.
 All environments that run auth-enabled services must have:
 
 - Production: a running Vault container reachable as gofr-vault on gofr-net.
-- Tests: an isolated Vault container (gofr-vault-test) started by the ephemeral test stack.
+- Tests: an isolated Vault container (gofr-np-vault-test) started by the ephemeral test stack.
 - Vault initialized and unsealed.
 - KV v2 enabled at secret/.
 - JWT signing secret present at secret/gofr/config/jwt-signing-secret with key "value".
@@ -157,11 +157,11 @@ Steps:
 1. Update docker/compose.dev.yml
    - Ensure auth is enabled (no GOFR_NP_NO_AUTH=1) and no local GOFR_NP_JWT_SECRET / GOFR_NP_TOKEN_STORE are used.
    - Run an isolated Vault for tests inside the stack:
-     - service name: gofr-vault-test
+    - service name: gofr-np-vault-test
      - exposed on a host test port only for local debugging
    - Point gofr-np services at the isolated test Vault:
      - GOFR_NP_AUTH_BACKEND=vault
-     - GOFR_NP_VAULT_URL=http://gofr-vault-test:8201
+    - GOFR_NP_VAULT_URL=http://gofr-np-vault-test:8201
      - GOFR_NP_VAULT_PATH_PREFIX=gofr/auth
      - GOFR_NP_VAULT_MOUNT=secret
    - Mount a dedicated test secrets volume at /run/gofr-secrets:ro:

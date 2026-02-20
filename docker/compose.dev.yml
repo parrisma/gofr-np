@@ -25,8 +25,8 @@ x-gofr-np-common: &gofr-np-common
 services:
   vault:
     image: gofr-vault:latest
-    container_name: gofr-vault-test
-    hostname: gofr-vault-test
+    container_name: gofr-np-vault-test
+    hostname: gofr-np-vault-test
     restart: "no"
     cap_add:
       - IPC_LOCK
@@ -38,9 +38,9 @@ services:
       - VAULT_LOG_LEVEL=info
       - SKIP_SETCAP=true
     volumes:
-      - gofr-vault-test-data:/vault/data
-      - gofr-vault-test-logs:/vault/logs
-      - gofr-vault-test-file:/vault/file
+      - gofr-np-vault-test-data:/vault/data
+      - gofr-np-vault-test-logs:/vault/logs
+      - gofr-np-vault-test-file:/vault/file
     healthcheck:
       test: ["CMD", "vault", "status"]
       interval: 5s
@@ -73,7 +73,7 @@ services:
       - GOFR_NP_ENV=TEST
       - GOFR_NP_LOG_LEVEL=${GOFR_NP_LOG_LEVEL:-DEBUG}
       - GOFR_NP_AUTH_BACKEND=${GOFR_NP_AUTH_BACKEND:-vault}
-      - GOFR_NP_VAULT_URL=${GOFR_NP_VAULT_URL:-http://gofr-vault-test:8201}
+        - GOFR_NP_VAULT_URL=${GOFR_NP_VAULT_URL:-http://gofr-np-vault-test:8201}
       - GOFR_NP_VAULT_PATH_PREFIX=${GOFR_NP_VAULT_PATH_PREFIX:-gofr/auth}
       - GOFR_NP_VAULT_MOUNT=${GOFR_NP_VAULT_MOUNT:-secret}
     ports:
@@ -136,7 +136,7 @@ services:
       - GOFR_NP_ENV=TEST
       - GOFR_NP_LOG_LEVEL=${GOFR_NP_LOG_LEVEL:-DEBUG}
       - GOFR_NP_AUTH_BACKEND=${GOFR_NP_AUTH_BACKEND:-vault}
-      - GOFR_NP_VAULT_URL=${GOFR_NP_VAULT_URL:-http://gofr-vault-test:8201}
+        - GOFR_NP_VAULT_URL=${GOFR_NP_VAULT_URL:-http://gofr-np-vault-test:8201}
       - GOFR_NP_VAULT_PATH_PREFIX=${GOFR_NP_VAULT_PATH_PREFIX:-gofr/auth}
       - GOFR_NP_VAULT_MOUNT=${GOFR_NP_VAULT_MOUNT:-secret}
     ports:
@@ -160,14 +160,14 @@ volumes:
   gofr-np-test-data:
     name: gofr-np-test-data
     external: false
-  gofr-vault-test-data:
-    name: gofr-vault-test-data
+  gofr-np-vault-test-data:
+    name: gofr-np-vault-test-data
     external: false
-  gofr-vault-test-logs:
-    name: gofr-vault-test-logs
+  gofr-np-vault-test-logs:
+    name: gofr-np-vault-test-logs
     external: false
-  gofr-vault-test-file:
-    name: gofr-vault-test-file
+  gofr-np-vault-test-file:
+    name: gofr-np-vault-test-file
     external: false
 
   gofr-secrets-test:
