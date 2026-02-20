@@ -16,6 +16,9 @@ from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.types import TextContent, Tool
 
 from gofr_common.mcp import json_text
+from gofr_common.web import get_auth_header_from_context
+
+from gofr_common.auth.exceptions import AuthError
 
 from app.auth import AuthService
 from app.logger import session_logger as logger
@@ -31,9 +34,95 @@ proxy_url_mode: Optional[str] = None
 app = Server("gofr-np-service")
 
 
+TOKEN_OPTIONAL_TOOLS = frozenset(
+    {
+        "ping",
+        "math_list_operations",
+    }
+)
+
+
 def _json_text(data: Dict[str, Any]) -> TextContent:
     """Create JSON text content - uses gofr_common."""
     return json_text(data)
+
+
+def _safe_arg_keys(arguments: Dict[str, Any]) -> List[str]:
+    return sorted(list(arguments.keys()))
+
+
+def _extract_bearer_token(auth_header: str) -> Optional[str]:
+    header = (auth_header or "").strip()
+    if not header:
+        return None
+    if header.lower().startswith("bearer "):
+        token = header[7:].strip()
+        return token or None
+    return None
+
+
+def _get_auth_token(arguments: Dict[str, Any]) -> Optional[str]:
+    token = arguments.get("auth_token") or arguments.get("token")
+    if isinstance(token, str) and token.strip():
+        return token.strip()
+
+    header_token = _extract_bearer_token(get_auth_header_from_context())
+    return header_token
+
+
+def _select_effective_group(groups: List[str]) -> str:
+    for group in groups:
+        if group != "public":
+            return group
+    return "public"
+
+
+def _auth_required_error() -> List[TextContent]:
+    return [
+        _json_text(
+            {
+                "error": "AUTH_REQUIRED",
+                "recovery": "Provide auth_token (preferred), token (legacy), or Authorization: Bearer <token>",
+            }
+        )
+    ]
+
+
+def _auth_invalid_error(exc: Exception) -> List[TextContent]:
+    return [
+        _json_text(
+            {
+                "error": "AUTH_INVALID",
+                "detail": str(exc),
+                "recovery": "Provide a valid, non-expired token issued by the GOFR auth tooling",
+            }
+        )
+    ]
+
+
+def _enforce_auth(tool_name: str, arguments: Dict[str, Any]) -> Optional[List[TextContent]]:
+    if auth_service is None:
+        return None
+
+    token = _get_auth_token(arguments)
+
+    if tool_name in TOKEN_OPTIONAL_TOOLS and not token:
+        return None
+
+    if not token:
+        return _auth_required_error()
+
+    try:
+        token_info = auth_service.verify_token(token)
+        effective_group = _select_effective_group(token_info.groups)
+        # Override any caller-provided group.
+        arguments["group"] = effective_group
+        return None
+    except AuthError as exc:
+        return _auth_invalid_error(exc)
+    except Exception as exc:
+        # Fail closed.
+        return _auth_invalid_error(exc)
 
 
 # Built-in tools (not from math engine)
@@ -60,7 +149,14 @@ async def handle_list_tools() -> List[Tool]:
 @app.call_tool()
 async def handle_call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
     """Handle tool invocations."""
-    logger.info("Tool called", tool=name, args=arguments)
+    logger.info(
+        "Tool called",
+        tool=name,
+        arg_keys=_safe_arg_keys(arguments),
+        has_auth_token=bool(arguments.get("auth_token")),
+        has_legacy_token=bool(arguments.get("token")),
+        has_auth_header=bool(get_auth_header_from_context()),
+    )
 
     # Handle built-in tools
     if name == "ping":
@@ -69,6 +165,9 @@ async def handle_call_tool(name: str, arguments: Dict[str, Any]) -> List[TextCon
     # Route to registry for math tools
     registry = get_registry()
     if registry.has_tool(name):
+        auth_error = _enforce_auth(name, arguments)
+        if auth_error is not None:
+            return auth_error
         return await _handle_registry_tool(name, arguments)
 
     return [_json_text({"error": f"Unknown tool: {name}"})]
@@ -129,6 +228,7 @@ starlette_app = create_mcp_starlette_app(
     mcp_handler=handle_streamable_http,
     lifespan=lifespan,
     env_prefix="GOFR_NP",
+    include_auth_middleware=True,
 )
 
 

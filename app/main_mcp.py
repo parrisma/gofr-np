@@ -2,10 +2,9 @@ import argparse
 import os
 import sys
 import asyncio
-from app.auth import AuthService
 from app.logger import Logger, session_logger
 import app.startup.validation
-from app.startup.auth_config import resolve_auth_config
+from app.auth import create_auth_service, is_auth_disabled
 
 logger: Logger = session_logger
 
@@ -37,13 +36,13 @@ if __name__ == "__main__":
         "--jwt-secret",
         type=str,
         default=None,
-        help="JWT secret key (default: from GOFRNP_JWT_SECRET env var or auto-generated)",
+        help="DEPRECATED: JWT secret is sourced from Vault via gofr-common (ignored)",
     )
     parser.add_argument(
         "--token-store",
         type=str,
         default=None,
-        help="Path to token store file (default: configured in app.config)",
+        help="DEPRECATED: token store is Vault-backed via gofr-common (ignored)",
     )
     parser.add_argument(
         "--no-auth",
@@ -80,27 +79,26 @@ if __name__ == "__main__":
     # Create logger for startup messages
     startup_logger: Logger = session_logger
 
-    # Resolve authentication configuration
-    jwt_secret, token_store_path = resolve_auth_config(
-        jwt_secret_arg=args.jwt_secret,
-        token_store_arg=args.token_store,
-        require_auth=not args.no_auth,
-        logger=startup_logger,
-    )
-
-    # Initialize auth service only if auth is required
-    auth_service = None
-    if jwt_secret:
-        auth_service = AuthService(secret_key=jwt_secret, token_store_path=token_store_path)
-        startup_logger.info(
-            "Authentication service initialized",
-            jwt_enabled=True,
-            token_store=token_store_path,
+    if args.jwt_secret or args.token_store:
+        startup_logger.warning(
+            "Deprecated auth args provided; ignored (gofr-common Vault auth is used)",
+            has_jwt_secret_arg=bool(args.jwt_secret),
+            has_token_store_arg=bool(args.token_store),
         )
-    else:
+
+    auth_service = None
+    if is_auth_disabled(no_auth_flag=args.no_auth):
         startup_logger.warning(
             "Authentication DISABLED - running in no-auth mode (INSECURE)",
             jwt_enabled=False,
+        )
+    else:
+        auth_service = create_auth_service(logger=startup_logger)
+        startup_logger.info(
+            "Authentication service initialized",
+            jwt_enabled=True,
+            audience="gofr-api",
+            vault_path_prefix=os.environ.get("GOFR_NP_VAULT_PATH_PREFIX", ""),
         )
 
     # Import and configure mcp_server with auth service

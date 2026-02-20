@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "project": "gofr-np",
+  "mount_point": "approle",
+  "token_ttl": "1h",
+  "token_max_ttl": "24h",
+  "credentials_output_dir": "secrets/service_creds",
+  "roles": [
+    {
+      "role_name": "gofr-np",
+      "policies": [
+        "gofr-np-policy"
+      ],
+      "credentials_filename": "gofr-np"
+    }
+  ]
+}

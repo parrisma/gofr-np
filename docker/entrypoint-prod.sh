@@ -1,70 +1,59 @@
 #!/bin/bash
+# =============================================================================
 # gofr-np Production Entrypoint
-# Starts MCP, MCPO, and Web servers via supervisor
-set -e
+# =============================================================================
+# Single-process, compose-friendly entrypoint:
+# - ensures data/logs directories exist
+# - fixes ownership (best-effort)
+# - optionally appends --no-auth for python app services
+# - drops privileges to gofr-np
+# - execs the provided command
+# =============================================================================
 
-# Environment variables with defaults
-export JWT_SECRET="${JWT_SECRET:-changeme}"
-export MCP_PORT="${MCP_PORT:-8060}"
-export MCPO_PORT="${MCPO_PORT:-8061}"
-export WEB_PORT="${WEB_PORT:-8062}"
+set -euo pipefail
 
-# gofr-np specific environment
-export GOFR_NP_DATA_DIR="${GOFR_NP_DATA_DIR:-/home/gofr-np/data}"
-export GOFR_NP_STORAGE_DIR="${GOFR_NP_STORAGE_DIR:-/home/gofr-np/data/storage}"
-export GOFR_NP_AUTH_DIR="${GOFR_NP_AUTH_DIR:-/home/gofr-np/data/auth}"
+GOFR_USER="gofr-np"
+PROJECT_DIR="/home/${GOFR_USER}"
 
-# Path to venv
-VENV_PATH="/home/gofr-np/.venv"
+CREDS_SOURCE="/run/gofr-secrets/service_creds/gofr-np.json"
+CREDS_TARGET_DIR="/run/secrets"
+CREDS_TARGET="${CREDS_TARGET_DIR}/vault_creds"
 
-echo "=== gofr-np Production Container ==="
-echo "MCP Port:  ${MCP_PORT}"
-echo "MCPO Port: ${MCPO_PORT}"
-echo "Web Port:  ${WEB_PORT}"
-echo "Data Dir:  ${GOFR_NP_DATA_DIR}"
+DATA_DIR="${GOFR_NP_DATA_DIR:-${PROJECT_DIR}/data}"
+STORAGE_DIR="${GOFR_NP_STORAGE_DIR:-${DATA_DIR}/storage}"
+AUTH_DIR="${GOFR_NP_AUTH_DIR:-${DATA_DIR}/auth}"
+LOG_DIR="${GOFR_NP_LOG_DIR:-${PROJECT_DIR}/logs}"
 
-# Ensure data directories exist with correct permissions
-mkdir -p "${GOFR_NP_DATA_DIR}" "${GOFR_NP_STORAGE_DIR}" "${GOFR_NP_AUTH_DIR}"
-chown -R gofr-np:gofr-np /home/gofr-np/data
+mkdir -p "${DATA_DIR}" "${STORAGE_DIR}" "${AUTH_DIR}" "${LOG_DIR}"
+chown -R "${GOFR_USER}:${GOFR_USER}" "${DATA_DIR}" "${LOG_DIR}" 2>/dev/null || true
 
-# Generate supervisor configuration
-cat > /etc/supervisor/conf.d/gofr-np.conf << EOF
-[supervisord]
-nodaemon=true
-logfile=/var/log/supervisor/supervisord.log
-pidfile=/var/run/supervisord.pid
-user=root
+# Copy Vault AppRole credentials from shared gofr-secrets volume
+mkdir -p "${CREDS_TARGET_DIR}"
+if [ -f "${CREDS_SOURCE}" ]; then
+    cp "${CREDS_SOURCE}" "${CREDS_TARGET}"
+    chmod 600 "${CREDS_TARGET}" 2>/dev/null || true
+    chown "${GOFR_USER}:${GOFR_USER}" "${CREDS_TARGET}" 2>/dev/null || true
+else
+    echo "WARNING: No AppRole credentials at ${CREDS_SOURCE}"
+fi
 
-[program:mcp]
-command=${VENV_PATH}/bin/python -m app.main_mcp
-directory=/home/gofr-np
-user=gofr-np
-autostart=true
-autorestart=true
-stdout_logfile=/home/gofr-np/logs/mcp.log
-stderr_logfile=/home/gofr-np/logs/mcp-error.log
-environment=PATH="${VENV_PATH}/bin:%(ENV_PATH)s",VIRTUAL_ENV="${VENV_PATH}",JWT_SECRET="%(ENV_JWT_SECRET)s",MCP_PORT="%(ENV_MCP_PORT)s",GOFR_NP_DATA_DIR="%(ENV_GOFR_NP_DATA_DIR)s",GOFR_NP_STORAGE_DIR="%(ENV_GOFR_NP_STORAGE_DIR)s",GOFR_NP_AUTH_DIR="%(ENV_GOFR_NP_AUTH_DIR)s"
+if [ "$#" -eq 0 ]; then
+    echo "ERROR: No command provided to entrypoint"
+    exit 1
+fi
 
-[program:mcpo]
-command=${VENV_PATH}/bin/mcpo --host 0.0.0.0 --port ${MCPO_PORT} -- ${VENV_PATH}/bin/python -m app.main_mcp
-directory=/home/gofr-np
-user=gofr-np
-autostart=true
-autorestart=true
-stdout_logfile=/home/gofr-np/logs/mcpo.log
-stderr_logfile=/home/gofr-np/logs/mcpo-error.log
-environment=PATH="${VENV_PATH}/bin:%(ENV_PATH)s",VIRTUAL_ENV="${VENV_PATH}",JWT_SECRET="%(ENV_JWT_SECRET)s",GOFR_NP_DATA_DIR="%(ENV_GOFR_NP_DATA_DIR)s",GOFR_NP_STORAGE_DIR="%(ENV_GOFR_NP_STORAGE_DIR)s",GOFR_NP_AUTH_DIR="%(ENV_GOFR_NP_AUTH_DIR)s"
+cmd=("$@")
 
-[program:web]
-command=${VENV_PATH}/bin/python -m app.main_web
-directory=/home/gofr-np
-user=gofr-np
-autostart=true
-autorestart=true
-stdout_logfile=/home/gofr-np/logs/web.log
-stderr_logfile=/home/gofr-np/logs/web-error.log
-environment=PATH="${VENV_PATH}/bin:%(ENV_PATH)s",VIRTUAL_ENV="${VENV_PATH}",JWT_SECRET="%(ENV_JWT_SECRET)s",WEB_PORT="%(ENV_WEB_PORT)s",GOFR_NP_DATA_DIR="%(ENV_GOFR_NP_DATA_DIR)s",GOFR_NP_STORAGE_DIR="%(ENV_GOFR_NP_STORAGE_DIR)s",GOFR_NP_AUTH_DIR="%(ENV_GOFR_NP_AUTH_DIR)s"
-EOF
+if [ "${GOFR_NP_NO_AUTH:-}" = "1" ]; then
+    if printf '%s\n' "${cmd[@]}" | grep -qE 'app\.main_(mcp|web)'; then
+        echo "WARNING: Authentication is DISABLED (GOFR_NP_NO_AUTH=1)"
+        cmd+=("--no-auth")
+    fi
+fi
 
-echo "Starting supervisor..."
-exec /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
+if [ "$(id -u)" -eq 0 ]; then
+    cmd_quoted="$(printf '%q ' "${cmd[@]}")"
+    exec su -s /bin/bash "${GOFR_USER}" -c "exec ${cmd_quoted}"
+fi
+
+exec "${cmd[@]}"

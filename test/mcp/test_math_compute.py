@@ -10,8 +10,14 @@ from mcp.client.streamable_http import streamablehttp_client
 @pytest.fixture
 def mcp_url():
     """MCP server URL."""
+    host = os.environ.get("GOFR_NP_MCP_HOST", "127.0.0.1")
     port = os.environ.get("GOFR_NP_MCP_PORT", "8060")
-    return f"http://localhost:{port}/mcp"
+    return f"http://{host}:{port}/mcp"
+
+
+@pytest.fixture
+def auth_args(mcp_auth_args):
+    return dict(mcp_auth_args)
 
 
 def extract_text(result) -> str:
@@ -50,13 +56,14 @@ class TestMathComputeUnary:
     """Tests for unary math operations."""
 
     @pytest.mark.asyncio
-    async def test_sqrt(self, mcp_url):
+    async def test_sqrt(self, mcp_url, auth_args):
         """Test square root operation."""
         async with streamablehttp_client(mcp_url) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 result = await session.call_tool("math_compute", {
+                    **auth_args,
                     "operation": "sqrt",
                     "a": [4, 9, 16, 25],
                 })
@@ -67,13 +74,14 @@ class TestMathComputeUnary:
                 assert "float" in data["dtype"]
 
     @pytest.mark.asyncio
-    async def test_exp(self, mcp_url):
+    async def test_exp(self, mcp_url, auth_args):
         """Test exponential operation."""
         async with streamablehttp_client(mcp_url) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 result = await session.call_tool("math_compute", {
+                    **auth_args,
                     "operation": "exp",
                     "a": [0, 1],
                 })
@@ -84,13 +92,14 @@ class TestMathComputeUnary:
                 assert abs(data["result"][1] - 2.718) < 0.01
 
     @pytest.mark.asyncio
-    async def test_abs(self, mcp_url):
+    async def test_abs(self, mcp_url, auth_args):
         """Test absolute value operation."""
         async with streamablehttp_client(mcp_url) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 result = await session.call_tool("math_compute", {
+                    **auth_args,
                     "operation": "abs",
                     "a": [-5, -3, 0, 3, 5],
                 })
@@ -99,13 +108,14 @@ class TestMathComputeUnary:
                 assert data["result"] == [5.0, 3.0, 0.0, 3.0, 5.0]
 
     @pytest.mark.asyncio
-    async def test_negate(self, mcp_url):
+    async def test_negate(self, mcp_url, auth_args):
         """Test negation operation."""
         async with streamablehttp_client(mcp_url) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 result = await session.call_tool("math_compute", {
+                    **auth_args,
                     "operation": "negate",
                     "a": [1, -2, 3],
                 })
@@ -114,7 +124,7 @@ class TestMathComputeUnary:
                 assert data["result"] == [-1.0, 2.0, -3.0]
 
     @pytest.mark.asyncio
-    async def test_sin_cos(self, mcp_url):
+    async def test_sin_cos(self, mcp_url, auth_args):
         """Test trigonometric operations."""
         async with streamablehttp_client(mcp_url) as (read, write, _):
             async with ClientSession(read, write) as session:
@@ -122,6 +132,7 @@ class TestMathComputeUnary:
 
                 # sin(0) = 0
                 result = await session.call_tool("math_compute", {
+                    **auth_args,
                     "operation": "sin",
                     "a": [0],
                 })
@@ -130,6 +141,7 @@ class TestMathComputeUnary:
 
                 # cos(0) = 1
                 result = await session.call_tool("math_compute", {
+                    **auth_args,
                     "operation": "cos",
                     "a": [0],
                 })
@@ -141,13 +153,14 @@ class TestMathComputeBinary:
     """Tests for binary math operations."""
 
     @pytest.mark.asyncio
-    async def test_add(self, mcp_url):
+    async def test_add(self, mcp_url, auth_args):
         """Test addition operation."""
         async with streamablehttp_client(mcp_url) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 result = await session.call_tool("math_compute", {
+                    **auth_args,
                     "operation": "add",
                     "a": [1, 2, 3],
                     "b": [10, 20, 30],
@@ -157,13 +170,14 @@ class TestMathComputeBinary:
                 assert data["result"] == [11.0, 22.0, 33.0]
 
     @pytest.mark.asyncio
-    async def test_subtract(self, mcp_url):
+    async def test_subtract(self, mcp_url, auth_args):
         """Test subtraction operation."""
         async with streamablehttp_client(mcp_url) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 result = await session.call_tool("math_compute", {
+                    **auth_args,
                     "operation": "subtract",
                     "a": [10, 20, 30],
                     "b": [1, 2, 3],
@@ -173,13 +187,14 @@ class TestMathComputeBinary:
                 assert data["result"] == [9.0, 18.0, 27.0]
 
     @pytest.mark.asyncio
-    async def test_multiply(self, mcp_url):
+    async def test_multiply(self, mcp_url, auth_args):
         """Test multiplication operation."""
         async with streamablehttp_client(mcp_url) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 result = await session.call_tool("math_compute", {
+                    **auth_args,
                     "operation": "multiply",
                     "a": [2, 3, 4],
                     "b": [5, 6, 7],
@@ -189,13 +204,14 @@ class TestMathComputeBinary:
                 assert data["result"] == [10.0, 18.0, 28.0]
 
     @pytest.mark.asyncio
-    async def test_divide(self, mcp_url):
+    async def test_divide(self, mcp_url, auth_args):
         """Test division operation."""
         async with streamablehttp_client(mcp_url) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 result = await session.call_tool("math_compute", {
+                    **auth_args,
                     "operation": "divide",
                     "a": [10, 20, 30],
                     "b": [2, 4, 5],
@@ -205,13 +221,14 @@ class TestMathComputeBinary:
                 assert data["result"] == [5.0, 5.0, 6.0]
 
     @pytest.mark.asyncio
-    async def test_power(self, mcp_url):
+    async def test_power(self, mcp_url, auth_args):
         """Test power operation."""
         async with streamablehttp_client(mcp_url) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 result = await session.call_tool("math_compute", {
+                    **auth_args,
                     "operation": "power",
                     "a": [2, 3, 4],
                     "b": 2,
@@ -225,13 +242,14 @@ class TestMathComputeBroadcasting:
     """Tests for broadcasting behavior."""
 
     @pytest.mark.asyncio
-    async def test_scalar_broadcast(self, mcp_url):
+    async def test_scalar_broadcast(self, mcp_url, auth_args):
         """Test scalar broadcasting to array."""
         async with streamablehttp_client(mcp_url) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 result = await session.call_tool("math_compute", {
+                    **auth_args,
                     "operation": "add",
                     "a": [1, 2, 3, 4, 5],
                     "b": 10,
@@ -241,7 +259,7 @@ class TestMathComputeBroadcasting:
                 assert data["result"] == [11.0, 12.0, 13.0, 14.0, 15.0]
 
     @pytest.mark.asyncio
-    async def test_2d_broadcast(self, mcp_url):
+    async def test_2d_broadcast(self, mcp_url, auth_args):
         """Test 2D array broadcasting."""
         async with streamablehttp_client(mcp_url) as (read, write, _):
             async with ClientSession(read, write) as session:
@@ -249,6 +267,7 @@ class TestMathComputeBroadcasting:
 
                 # [[1, 2], [3, 4]] * [10, 20] -> [[10, 40], [30, 80]]
                 result = await session.call_tool("math_compute", {
+                    **auth_args,
                     "operation": "multiply",
                     "a": [[1, 2], [3, 4]],
                     "b": [10, 20],
@@ -263,13 +282,14 @@ class TestMathComputeErrors:
     """Tests for error handling."""
 
     @pytest.mark.asyncio
-    async def test_unknown_operation(self, mcp_url):
+    async def test_unknown_operation(self, mcp_url, auth_args):
         """Test error for unknown operation."""
         async with streamablehttp_client(mcp_url) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 result = await session.call_tool("math_compute", {
+                    **auth_args,
                     "operation": "unknown_op",
                     "a": [1, 2, 3],
                 })
@@ -281,13 +301,14 @@ class TestMathComputeErrors:
                 # but it should mention the invalid value.
 
     @pytest.mark.asyncio
-    async def test_missing_operand_b(self, mcp_url):
+    async def test_missing_operand_b(self, mcp_url, auth_args):
         """Test error when binary op missing second operand."""
         async with streamablehttp_client(mcp_url) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 result = await session.call_tool("math_compute", {
+                    **auth_args,
                     "operation": "add",
                     "a": [1, 2, 3],
                     # b is missing
@@ -301,13 +322,14 @@ class TestMathComputePrecision:
     """Tests for precision options."""
 
     @pytest.mark.asyncio
-    async def test_float32_precision(self, mcp_url):
+    async def test_float32_precision(self, mcp_url, auth_args):
         """Test float32 precision."""
         async with streamablehttp_client(mcp_url) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 result = await session.call_tool("math_compute", {
+                    **auth_args,
                     "operation": "sqrt",
                     "a": [4, 9],
                     "precision": "float32",
@@ -318,13 +340,14 @@ class TestMathComputePrecision:
                 assert data["result"] == [2.0, 3.0]
 
     @pytest.mark.asyncio
-    async def test_float64_precision(self, mcp_url):
+    async def test_float64_precision(self, mcp_url, auth_args):
         """Test float64 precision (default)."""
         async with streamablehttp_client(mcp_url) as (read, write, _):
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
                 result = await session.call_tool("math_compute", {
+                    **auth_args,
                     "operation": "sqrt",
                     "a": [4, 9],
                     "precision": "float64",

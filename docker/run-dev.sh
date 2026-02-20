@@ -72,6 +72,22 @@ if ! docker volume inspect $VOLUME_NAME >/dev/null 2>&1; then
     docker volume create $VOLUME_NAME
 fi
 
+# Docker host access (docker-outside-of-docker)
+DOCKER_SOCK="/var/run/docker.sock"
+DOCKER_GID_ARGS=""
+DOCKER_SOCK_MOUNT=""
+if [ -S "$DOCKER_SOCK" ]; then
+    DOCKER_SOCK_GID=$(stat -c '%g' "$DOCKER_SOCK")
+    DOCKER_GID_ARGS="--group-add $DOCKER_SOCK_GID"
+    DOCKER_SOCK_MOUNT="-v /var/run/docker.sock:/var/run/docker.sock"
+    echo "Docker socket detected: $DOCKER_SOCK (gid=$DOCKER_SOCK_GID)"
+else
+    echo "ERROR: Docker socket not found on host at $DOCKER_SOCK"
+    echo "This dev container requires docker-outside-of-docker access."
+    echo "Start Docker on the host and re-run this script."
+    exit 1
+fi
+
 # Stop and remove existing container
 if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
     echo "Stopping existing container: $CONTAINER_NAME"
@@ -83,11 +99,14 @@ fi
 docker run -d \
     --name "$CONTAINER_NAME" \
     --network "$DOCKER_NETWORK" \
+    $DOCKER_GID_ARGS \
     -p ${MCP_PORT}:8020 \
     -p ${MCPO_PORT}:8021 \
     -p ${WEB_PORT}:8022 \
+    $DOCKER_SOCK_MOUNT \
     -v "$PROJECT_ROOT:/home/gofr/devroot/gofr-np:rw" \
     -v ${VOLUME_NAME}:/home/gofr/devroot/gofr-np/data:rw \
+    -v "$PROJECT_ROOT/../gofr-doc:/home/gofr/devroot/gofr-doc:ro" \
     -e GOFRNP_ENV=development \
     -e GOFRNP_DEBUG=true \
     -e GOFRNP_LOG_LEVEL=DEBUG \

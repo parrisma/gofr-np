@@ -1,24 +1,11 @@
-"""Authentication module
+"""Authentication module for gofr-np.
 
-Provides JWT-based authentication with group mapping.
-Re-exports from gofr_common.auth for backward compatibility.
+Thin re-export layer over gofr-common auth, mirroring the pattern used by other
+GOFR services.
 """
 
-# Re-export everything from gofr_common.auth
-from gofr_common.auth import (
-    AuthService,
-    TokenInfo,
-    get_auth_service,
-    verify_token,
-    optional_verify_token,
-    init_auth_service,
-)
+from gofr_common.auth import AuthService, TokenInfo
 
-__all__ = [
-    "AuthService",
-    "TokenInfo",
-    "get_auth_service",
-    "verify_token",
-    "optional_verify_token",
-    "init_auth_service",
-]
+from .factory import create_auth_service, is_auth_disabled
+
+__all__ = ["AuthService", "TokenInfo", "create_auth_service", "is_auth_disabled"]

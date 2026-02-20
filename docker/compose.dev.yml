@@ -1,0 +1,175 @@
+# =============================================================================
+# gofr-np Test Stack (Ephemeral)
+# =============================================================================
+# Started by scripts/start-test-env.sh and used by scripts/run_tests.sh.
+#
+# Services listen on INTERNAL prod ports (8060-8062),
+# host-mapped to TEST ports (8160-8162) via gofr_ports.env.
+#
+# Auth is enabled in tests to match GOFR platform posture.
+# =============================================================================
+
+name: gofr-np-test
+
+x-gofr-ports: &gofr-ports
+  env_file:
+    - lib/gofr-common/config/gofr_ports.env
+
+x-gofr-np-common: &gofr-np-common
+  <<: *gofr-ports
+  image: gofr-np-prod:latest
+  restart: "no"
+  networks:
+    - gofr-test-net
+
+services:
+  vault:
+    image: gofr-vault:latest
+    container_name: gofr-vault-test
+    hostname: gofr-vault-test
+    restart: "no"
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "${GOFR_VAULT_PORT_TEST:-8301}:8201"
+    environment:
+      - VAULT_ADDR=http://0.0.0.0:8201
+      - VAULT_API_ADDR=http://0.0.0.0:8201
+      - VAULT_LOG_LEVEL=info
+      - SKIP_SETCAP=true
+    volumes:
+      - gofr-vault-test-data:/vault/data
+      - gofr-vault-test-logs:/vault/logs
+      - gofr-vault-test-file:/vault/file
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    networks:
+      - gofr-test-net
+
+  mcp:
+    <<: *gofr-np-common
+    container_name: gofr-np-mcp-test
+    hostname: gofr-np-mcp-test
+    user: root
+    working_dir: /home/gofr-np
+    entrypoint: ["/home/gofr-np/entrypoint-prod.sh"]
+    command:
+      - /home/gofr-np/.venv/bin/python
+      - -m
+      - app.main_mcp
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "${GOFR_NP_MCP_PORT}"
+      - --web-url
+      - "http://gofr-np-web-test:${GOFR_NP_WEB_PORT}"
+      - --proxy-url-mode
+      - url
+    environment:
+      - GOFR_NP_ENV=TEST
+      - GOFR_NP_LOG_LEVEL=${GOFR_NP_LOG_LEVEL:-DEBUG}
+      - GOFR_NP_AUTH_BACKEND=${GOFR_NP_AUTH_BACKEND:-vault}
+      - GOFR_NP_VAULT_URL=${GOFR_NP_VAULT_URL:-http://gofr-vault-test:8201}
+      - GOFR_NP_VAULT_PATH_PREFIX=${GOFR_NP_VAULT_PATH_PREFIX:-gofr/auth}
+      - GOFR_NP_VAULT_MOUNT=${GOFR_NP_VAULT_MOUNT:-secret}
+    ports:
+      - "${GOFR_NP_MCP_PORT_TEST}:${GOFR_NP_MCP_PORT}"
+    volumes:
+      - gofr-np-test-data:/home/gofr-np/data
+      - gofr-secrets-test:/run/gofr-secrets:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /home/gofr-np/.venv/bin/python -c "import os, socket; port=int(os.environ.get('GOFR_NP_MCP_PORT','8060')); s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1', port)); s.close()"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+
+  mcpo:
+    <<: *gofr-np-common
+    container_name: gofr-np-mcpo-test
+    hostname: gofr-np-mcpo-test
+    user: gofr-np
+    working_dir: /home/gofr-np
+    entrypoint: []
+    depends_on:
+      mcp:
+        condition: service_healthy
+    command: >
+      /home/gofr-np/.venv/bin/mcpo
+      --host 0.0.0.0 --port ${GOFR_NP_MCPO_PORT} --server-type streamable-http
+      -- http://gofr-np-mcp-test:${GOFR_NP_MCP_PORT}/mcp
+    environment:
+      - GOFR_NP_ENV=TEST
+      - GOFR_NP_MCP_PORT=${GOFR_NP_MCP_PORT}
+      - GOFR_NP_MCPO_PORT=${GOFR_NP_MCPO_PORT}
+    ports:
+      - "${GOFR_NP_MCPO_PORT_TEST}:${GOFR_NP_MCPO_PORT}"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:${GOFR_NP_MCPO_PORT}/openapi.json || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  web:
+    <<: *gofr-np-common
+    container_name: gofr-np-web-test
+    hostname: gofr-np-web-test
+    user: root
+    working_dir: /home/gofr-np
+    entrypoint: ["/home/gofr-np/entrypoint-prod.sh"]
+    command:
+      - /home/gofr-np/.venv/bin/python
+      - -m
+      - app.main_web
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "${GOFR_NP_WEB_PORT}"
+    environment:
+      - GOFR_NP_ENV=TEST
+      - GOFR_NP_LOG_LEVEL=${GOFR_NP_LOG_LEVEL:-DEBUG}
+      - GOFR_NP_AUTH_BACKEND=${GOFR_NP_AUTH_BACKEND:-vault}
+      - GOFR_NP_VAULT_URL=${GOFR_NP_VAULT_URL:-http://gofr-vault-test:8201}
+      - GOFR_NP_VAULT_PATH_PREFIX=${GOFR_NP_VAULT_PATH_PREFIX:-gofr/auth}
+      - GOFR_NP_VAULT_MOUNT=${GOFR_NP_VAULT_MOUNT:-secret}
+    ports:
+      - "${GOFR_NP_WEB_PORT_TEST}:${GOFR_NP_WEB_PORT}"
+    volumes:
+      - gofr-np-test-data:/home/gofr-np/data
+      - gofr-secrets-test:/run/gofr-secrets:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:${GOFR_NP_WEB_PORT}/ping || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+networks:
+  gofr-test-net:
+    name: gofr-test-net
+    external: true
+
+volumes:
+  gofr-np-test-data:
+    name: gofr-np-test-data
+    external: false
+  gofr-vault-test-data:
+    name: gofr-vault-test-data
+    external: false
+  gofr-vault-test-logs:
+    name: gofr-vault-test-logs
+    external: false
+  gofr-vault-test-file:
+    name: gofr-vault-test-file
+    external: false
+
+  gofr-secrets-test:
+    name: gofr-secrets-test
+    external: false

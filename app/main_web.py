@@ -6,10 +6,9 @@ import os
 import sys
 
 from app.web_server.web_server import GofrNpWebServer
-from app.auth import AuthService
+from app.auth import create_auth_service, is_auth_disabled
 from app.logger import Logger, session_logger
 import app.startup.validation
-from app.startup.auth_config import resolve_auth_config
 
 logger: Logger = session_logger
 
@@ -39,13 +38,13 @@ if __name__ == "__main__":
         "--jwt-secret",
         type=str,
         default=None,
-        help="JWT secret key (default: from GOFRNP_JWT_SECRET env var or auto-generated)",
+        help="DEPRECATED: JWT secret is sourced from Vault via gofr-common (ignored)",
     )
     parser.add_argument(
         "--token-store",
         type=str,
         default=None,
-        help="Path to token store file (default: configured in app.config)",
+        help="DEPRECATED: token store is Vault-backed via gofr-common (ignored)",
     )
     parser.add_argument(
         "--no-auth",
@@ -54,27 +53,26 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    # Validate JWT secret if authentication is enabled
-    jwt_secret, token_store_path = resolve_auth_config(
-        jwt_secret_arg=args.jwt_secret,
-        token_store_arg=args.token_store,
-        require_auth=not args.no_auth,
-        logger=logger,
-    )
-
-    # Initialize AuthService if authentication is enabled
-    auth_service = None
-    if jwt_secret:
-        auth_service = AuthService(secret_key=jwt_secret, token_store_path=token_store_path)
-        logger.info(
-            "Authentication service initialized",
-            jwt_enabled=True,
-            token_store=token_store_path,
+    if args.jwt_secret or args.token_store:
+        logger.warning(
+            "Deprecated auth args provided; ignored (gofr-common Vault auth is used)",
+            has_jwt_secret_arg=bool(args.jwt_secret),
+            has_token_store_arg=bool(args.token_store),
         )
-    else:
+
+    auth_service = None
+    if is_auth_disabled(no_auth_flag=args.no_auth):
         logger.warning(
             "Authentication DISABLED - running in no-auth mode (INSECURE)",
             jwt_enabled=False,
+        )
+    else:
+        auth_service = create_auth_service(logger=logger)
+        logger.info(
+            "Authentication service initialized",
+            jwt_enabled=True,
+            audience="gofr-api",
+            vault_path_prefix=os.environ.get("GOFR_NP_VAULT_PATH_PREFIX", ""),
         )
 
     # Initialize server
@@ -92,7 +90,7 @@ if __name__ == "__main__":
             "Configuration",
             host=args.host,
             port=args.port,
-            jwt_enabled=not args.no_auth,
+            jwt_enabled=auth_service is not None,
         )
         logger.info("=" * 70)
         logger.info(f"API endpoint: http://{args.host}:{args.port}")
