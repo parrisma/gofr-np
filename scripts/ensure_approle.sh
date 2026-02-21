@@ -109,6 +109,36 @@ export GOFR_VAULT_TOKEN="$VAULT_ROOT_TOKEN"
 cd "$PROJECT_ROOT"
 
 if [ "$CREDS_PRESENT" = true ]; then
+    # Validate existing creds actually work against Vault.
+    CREDS_TO_TEST=""
+    if [ -f "$CREDS_FILE" ]; then
+        CREDS_TO_TEST="$CREDS_FILE"
+    elif [ -f "$FALLBACK_CREDS_FILE" ]; then
+        CREDS_TO_TEST="$FALLBACK_CREDS_FILE"
+    fi
+
+    if [ -n "$CREDS_TO_TEST" ]; then
+        ROLE_ID=$(python3 -c "import json; print(json.load(open('$CREDS_TO_TEST'))['role_id'])" 2>/dev/null || true)
+        SECRET_ID=$(python3 -c "import json; print(json.load(open('$CREDS_TO_TEST'))['secret_id'])" 2>/dev/null || true)
+
+        if [ -n "$ROLE_ID" ] && [ -n "$SECRET_ID" ]; then
+            if docker exec "$VAULT_CONTAINER" vault write -format=json auth/approle/login \
+                   role_id="$ROLE_ID" secret_id="$SECRET_ID" >/dev/null 2>&1; then
+                info "Existing AppRole credentials validated OK"
+            else
+                warn "Existing AppRole credentials are invalid -- will re-provision"
+                CREDS_PRESENT=false
+                rm -f "$CREDS_FILE" "$FALLBACK_CREDS_FILE" 2>/dev/null || true
+            fi
+        else
+            warn "Could not parse existing creds file -- will re-provision"
+            CREDS_PRESENT=false
+            rm -f "$CREDS_FILE" "$FALLBACK_CREDS_FILE" 2>/dev/null || true
+        fi
+    fi
+fi
+
+if [ "$CREDS_PRESENT" = true ]; then
     info "Syncing Vault policies (credentials already exist)..."
     if ! command -v uv &>/dev/null; then
         err "uv is required but not available on PATH"

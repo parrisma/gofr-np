@@ -2,9 +2,14 @@
 # =============================================================================
 # Migrate secrets into Docker volumes
 # =============================================================================
-# Copies existing secrets from lib/gofr-common/secrets/ (overlaid with any
-# project-local secrets/) into the shared gofr-secrets and gofr-secrets-test
-# Docker volumes.
+# Copies runtime AppRole credentials into the shared gofr-secrets and
+# gofr-secrets-test Docker volumes.
+#
+# IMPORTANT (Phase 1 hardening):
+# - These volumes are mounted into production containers.
+# - Do NOT copy Vault bootstrap artifacts (root token, unseal key, init output)
+#   into these volumes.
+# - Only copy runtime material required by services: service_creds/*.json.
 #
 # These volumes are SHARED across all GOFR projects.
 #
@@ -31,27 +36,26 @@ info()  { echo "[INFO]  $*"; }
 ok()    { echo "[OK]    $*"; }
 err()   { echo "[FAIL]  $*" >&2; }
 
-# ---- Select and verify source secrets dir -----------------------------------
-# gofr-np stores bootstrap/test harness secrets under ./secrets.
-# Some projects may also carry secrets under lib/gofr-common/secrets.
-if [ -d "$PROJECT_SECRETS_DIR" ] && [ -f "$PROJECT_SECRETS_DIR/vault_root_token" ]; then
-    SOURCE_DIR="$PROJECT_SECRETS_DIR"
-elif [ -d "$COMMON_SECRETS_DIR" ] && [ -f "$COMMON_SECRETS_DIR/vault_root_token" ]; then
+# ---- Select and verify source creds dir -------------------------------------
+# Prefer gofr-common as the base (stable location for shared service_creds),
+# then overlay project-local creds (newly provisioned AppRole IDs for gofr-np).
+if [ -d "$COMMON_SECRETS_DIR/service_creds" ]; then
     SOURCE_DIR="$COMMON_SECRETS_DIR"
+elif [ -d "$PROJECT_SECRETS_DIR/service_creds" ]; then
+    SOURCE_DIR="$PROJECT_SECRETS_DIR"
 fi
 
 if [ -z "$SOURCE_DIR" ]; then
-    err "Source secrets not found"
+    err "Source service_creds not found"
     echo "  Tried:"
-    echo "    - $PROJECT_SECRETS_DIR"
-    echo "    - $COMMON_SECRETS_DIR"
-    echo "  Expected: vault_root_token, vault_unseal_key, service_creds/"
+    echo "    - $COMMON_SECRETS_DIR/service_creds"
+    echo "    - $PROJECT_SECRETS_DIR/service_creds"
+    echo "  Expected: service_creds/*.json"
     exit 1
 fi
 
-# Build a staging directory that overlays project-local creds on top of the
-# gofr-common secrets.  This ensures the shared volumes always carry the
-# latest role_id/secret_id for gofr-np.
+# Build a staging directory that contains ONLY runtime credentials.
+# Overlay project-local creds on top of gofr-common service_creds.
 TMP_SECRETS_DIR=""
 cleanup_tmp() {
     if [ -n "${TMP_SECRETS_DIR:-}" ] && [ -d "${TMP_SECRETS_DIR}" ]; then
@@ -61,14 +65,17 @@ cleanup_tmp() {
 trap cleanup_tmp EXIT
 
 TMP_SECRETS_DIR="$(mktemp -d)"
-cp -a "$SOURCE_DIR/." "$TMP_SECRETS_DIR/"
+mkdir -p "$TMP_SECRETS_DIR/service_creds"
+
+if [ -d "$SOURCE_DIR/service_creds" ]; then
+    cp -a "$SOURCE_DIR/service_creds/." "$TMP_SECRETS_DIR/service_creds/"
+fi
 
 if [ -d "$PROJECT_CREDS_DIR" ]; then
-    mkdir -p "$TMP_SECRETS_DIR/service_creds"
     cp -a "$PROJECT_CREDS_DIR/." "$TMP_SECRETS_DIR/service_creds/"
 fi
 
-info "Source directory: $SOURCE_DIR"
+info "Source directory: $SOURCE_DIR (service_creds only)"
 info "Staging directory: $TMP_SECRETS_DIR"
 echo "  Contents:"
 ls -la "$TMP_SECRETS_DIR/" | sed 's/^/    /'
@@ -87,6 +94,10 @@ for VOLUME in "${VOLUMES[@]}"; do
     # Start a disposable Alpine container with the volume mounted
     HELPER="gofr-secrets-migrate-$$"
     docker run -d --name "$HELPER" -v "$VOLUME:/dst" alpine:3.19 sleep 60 >/dev/null
+
+    # IMPORTANT: remove any previous contents so stale bootstrap artifacts do
+    # not linger in the runtime volume.
+    docker exec "$HELPER" sh -c 'rm -rf /dst/*' >/dev/null 2>&1 || true
 
     # Copy from the calling container's filesystem into the helper
     docker cp "$TMP_SECRETS_DIR/." "$HELPER:/dst/"

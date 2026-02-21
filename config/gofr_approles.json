@@ -4,7 +4,7 @@
   "mount_point": "approle",
   "token_ttl": "1h",
   "token_max_ttl": "24h",
-  "credentials_output_dir": "/run/gofr-secrets/service_creds",
+  "credentials_output_dir": "secrets/service_creds",
   "roles": [
     {
       "role_name": "gofr-np",
