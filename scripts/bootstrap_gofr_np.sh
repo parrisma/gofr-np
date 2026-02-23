@@ -289,22 +289,16 @@ build_prod_image() {
 }
 
 ensure_approle_creds() {
-  local project_creds="${PROJECT_ROOT}/secrets/service_creds/gofr-np.json"
-  local common_creds="${PROJECT_ROOT}/lib/gofr-common/secrets/service_creds/gofr-np.json"
-
-  if [[ -f "${project_creds}" ]] || [[ -f "${common_creds}" ]]; then
-    ok "AppRole creds already exist for gofr-np."
-    return 0
-  fi
-
   if [[ ! -f "${PROJECT_ROOT}/scripts/ensure_approle.sh" ]]; then
     die "ensure_approle.sh not found at scripts/ensure_approle.sh." \
       "Sync your repository and ensure scripts/ exists."
   fi
 
-  info "AppRole creds missing for gofr-np. Provisioning now..."
+  # Always delegate to ensure_approle.sh -- it validates existing creds
+  # via live AppRole login and only re-provisions if missing or stale.
+  info "Validating/provisioning AppRole creds for gofr-np..."
   (cd "${PROJECT_ROOT}" && bash ./scripts/ensure_approle.sh)
-  ok "AppRole provisioning completed."
+  ok "AppRole creds validated for gofr-np."
 }
 
 seed_secrets_volume() {

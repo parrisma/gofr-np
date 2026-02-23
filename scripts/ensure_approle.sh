@@ -32,7 +32,7 @@ FALLBACK_SECRETS_DIR="$PROJECT_ROOT/lib/gofr-common/secrets"
 CREDS_FILE="$SECRETS_DIR/service_creds/gofr-np.json"
 FALLBACK_CREDS_FILE="$FALLBACK_SECRETS_DIR/service_creds/gofr-np.json"
 VAULT_CONTAINER="gofr-vault"
-VAULT_PORT="${GOFR_VAULT_PORT:?GOFR_VAULT_PORT not set -- source gofr_ports.env}"
+VAULT_ADDR="${VAULT_ADDR:-http://gofr-vault:8201}"
 
 CHECK_ONLY=false
 [ "${1:-}" = "--check" ] && CHECK_ONLY=true
@@ -67,8 +67,19 @@ if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${VAULT_CONTAINER}$
 fi
 
 # ---- Vault unsealed? --------------------------------------------------------
-VAULT_STATUS=$(docker exec "$VAULT_CONTAINER" vault status -format=json 2>/dev/null || echo '{}')
-IS_SEALED=$(echo "$VAULT_STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('sealed', True))" 2>/dev/null || echo "True")
+VAULT_STATUS="$(curl -s --connect-timeout 2 --max-time 3 "${VAULT_ADDR}/v1/sys/health" 2>/dev/null || true)"
+IS_SEALED="$(echo "${VAULT_STATUS:-{}}" | python3 - <<'PY' 2>/dev/null || echo "True"
+import json
+import sys
+
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    data = {}
+
+print(data.get("sealed", True))
+PY
+)"
 
 if [ "$IS_SEALED" != "False" ]; then
     err "Vault is sealed."
@@ -103,7 +114,7 @@ fi
 ok "Root token found"
 
 # ---- Provision / Sync -------------------------------------------------------
-export GOFR_VAULT_URL="http://${VAULT_CONTAINER}:${VAULT_PORT}"
+export GOFR_VAULT_URL="${VAULT_ADDR}"
 export GOFR_VAULT_TOKEN="$VAULT_ROOT_TOKEN"
 
 cd "$PROJECT_ROOT"
@@ -122,8 +133,14 @@ if [ "$CREDS_PRESENT" = true ]; then
         SECRET_ID=$(python3 -c "import json; print(json.load(open('$CREDS_TO_TEST'))['secret_id'])" 2>/dev/null || true)
 
         if [ -n "$ROLE_ID" ] && [ -n "$SECRET_ID" ]; then
-            if docker exec "$VAULT_CONTAINER" vault write -format=json auth/approle/login \
-                   role_id="$ROLE_ID" secret_id="$SECRET_ID" >/dev/null 2>&1; then
+            http_code="$(curl -s -o /dev/null -w "%{http_code}" \
+                --connect-timeout 2 --max-time 4 \
+                -H 'Content-Type: application/json' \
+                -X POST \
+                -d "{\"role_id\":\"${ROLE_ID}\",\"secret_id\":\"${SECRET_ID}\"}" \
+                "${VAULT_ADDR}/v1/auth/approle/login" || true)"
+
+            if [ "${http_code}" = "200" ]; then
                 info "Existing AppRole credentials validated OK"
             else
                 warn "Existing AppRole credentials are invalid -- will re-provision"

@@ -81,6 +81,29 @@ echo "  Contents:"
 ls -la "$TMP_SECRETS_DIR/" | sed 's/^/    /'
 echo ""
 
+# ---- Validate staged creds --------------------------------------------------
+info "Validating staged service_creds JSON files..."
+
+shopt -s nullglob
+CREDS_FILES=("$TMP_SECRETS_DIR/service_creds/"*.json)
+shopt -u nullglob
+
+if [ ${#CREDS_FILES[@]} -eq 0 ]; then
+    err "No service_creds/*.json found in staging directory"
+    err "Fix: run ensure_approle.sh to provision creds, then retry"
+    exit 1
+fi
+
+for f in "${CREDS_FILES[@]}"; do
+    if ! python3 -c "import json,sys; d=json.load(open(sys.argv[1],'r',encoding='utf-8')); rid=str(d.get('role_id','')).strip(); sid=str(d.get('secret_id','')).strip(); sys.exit(0 if rid and sid else 1)" "$f" >/dev/null 2>&1; then
+        err "Invalid creds JSON (missing role_id/secret_id): $f"
+        err "Fix: regenerate AppRole creds and re-run this script"
+        exit 1
+    fi
+done
+
+ok "All staged service_creds JSON files are valid"
+
 # ---- Seed each volume -------------------------------------------------------
 for VOLUME in "${VOLUMES[@]}"; do
     # Ensure volume exists
@@ -107,7 +130,6 @@ for VOLUME in "${VOLUMES[@]}"; do
     docker exec "$HELPER" sh -c '
         chown -R 1000:1000 /dst
         chmod 700 /dst
-        chmod 600 /dst/vault_root_token /dst/vault_unseal_key 2>/dev/null || true
         chmod 600 /dst/service_creds/*.json 2>/dev/null || true
         echo "  Contents of volume:"
         ls -la /dst/ | sed "s/^/    /"
