@@ -68,18 +68,12 @@ fi
 
 # ---- Vault unsealed? --------------------------------------------------------
 VAULT_STATUS="$(curl -s --connect-timeout 2 --max-time 3 "${VAULT_ADDR}/v1/sys/health" 2>/dev/null || true)"
-IS_SEALED="$(echo "${VAULT_STATUS:-{}}" | python3 - <<'PY' 2>/dev/null || echo "True"
-import json
-import sys
-
-try:
-    data = json.load(sys.stdin)
-except Exception:
-    data = {}
-
-print(data.get("sealed", True))
-PY
-)"
+if [ -z "${VAULT_STATUS}" ]; then
+    err "Vault API unreachable at ${VAULT_ADDR}"
+    err "  Fix: start Vault: ./lib/gofr-common/scripts/manage_vault.sh start"
+    exit 1
+fi
+IS_SEALED="$(python3 -c 'import json,sys; print(json.loads(sys.stdin.read() or "{}").get("sealed", True))' <<<"${VAULT_STATUS}" 2>/dev/null || echo "True")"
 
 if [ "$IS_SEALED" != "False" ]; then
     err "Vault is sealed."
