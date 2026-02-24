@@ -1,9 +1,10 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # Standard GOFR user paths - all projects use 'gofr' user
 GOFR_USER="gofr"
-PROJECT_DIR="/home/${GOFR_USER}/devroot/gofr-np"
+# Allow run-dev-container.sh to mount the project at a non-default path.
+PROJECT_DIR="${GOFR_NP_PROJECT_DIR:-/home/${GOFR_USER}/devroot/gofr-np}"
 # gofr-common is now a git submodule in lib/gofr-common
 COMMON_DIR="$PROJECT_DIR/lib/gofr-common"
 VENV_DIR="$PROJECT_DIR/.venv"
@@ -12,18 +13,33 @@ echo "======================================================================="
 echo "GOFR-NP Container Entrypoint"
 echo "======================================================================="
 
+ensure_dir() {
+    local dir="$1"
+    if [ -d "$dir" ]; then
+        return 0
+    fi
+    mkdir -p "$dir" 2>/dev/null || sudo mkdir -p "$dir" 2>/dev/null
+}
+
 # Fix data directory permissions if mounted as volume
 if [ -d "$PROJECT_DIR/data" ]; then
     if [ ! -w "$PROJECT_DIR/data" ]; then
         echo "Fixing permissions for $PROJECT_DIR/data..."
-        sudo chown -R ${GOFR_USER}:${GOFR_USER} "$PROJECT_DIR/data" 2>/dev/null || \
+        sudo chown -R "$(id -u):$(id -g)" "$PROJECT_DIR/data" 2>/dev/null || \
             echo "Warning: Could not fix permissions. Run container with --user $(id -u):$(id -g)"
     fi
 fi
 
 # Create subdirectories if they don't exist
-mkdir -p "$PROJECT_DIR/data/storage" "$PROJECT_DIR/data/auth"
-mkdir -p "$PROJECT_DIR/logs"
+if ! ensure_dir "$PROJECT_DIR/data/storage"; then
+    echo "Warning: Could not create $PROJECT_DIR/data/storage"
+fi
+if ! ensure_dir "$PROJECT_DIR/data/auth"; then
+    echo "Warning: Could not create $PROJECT_DIR/data/auth"
+fi
+if ! ensure_dir "$PROJECT_DIR/logs"; then
+    echo "Warning: Could not create $PROJECT_DIR/logs (bind mount may be read-only for this UID/GID)"
+fi
 
 # Ensure virtual environment exists and is valid
 if [ ! -f "$VENV_DIR/bin/python" ] || [ ! -x "$VENV_DIR/bin/python" ]; then
